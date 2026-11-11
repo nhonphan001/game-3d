@@ -1,6 +1,7 @@
 // Lớp Học Nét Vẽ — máy chủ lớp học thời gian thực.
 // Mỗi lớp: 1 giáo viên + tối đa 40 học sinh. Học sinh nhập mã lớp + tên + ảnh nhân vật,
-// giáo viên duyệt rồi mới vào lớp. Không có chat tự do: chỉ biểu cảm và câu chọn sẵn.
+// giáo viên duyệt rồi mới vào lớp. Có trò chuyện bằng chữ (giáo viên tắt tiếng, xoá tin, tắt chat được),
+// hình vẽ gửi lên phải được giáo viên duyệt, rồi nhân vật cầm hình và giáo viên chiếu lên bảng.
 // Dữ liệu chỉ nằm trong bộ nhớ: ai rời lớp thì hình bị xoá, tắt máy chủ là mất hết.
 const http = require('http');
 const fs = require('fs');
