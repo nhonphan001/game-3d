@@ -9,6 +9,11 @@ Group=lophoc
 WorkingDirectory=/opt/game-3d/lop-hoc
 Environment=NODE_ENV=production
 Environment=PORT=3000
+# Mã quản trị (ADMIN_TOKEN) nằm trong file này, chỉ root đọc được
+EnvironmentFile=/etc/lop-hoc.env
+# Tài khoản đã gán được lưu ở /var/lib/lop-hoc (thư mục duy nhất dịch vụ được ghi)
+StateDirectory=lop-hoc
+Environment=DATA_DIR=/var/lib/lop-hoc
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=3

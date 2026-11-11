@@ -10,6 +10,16 @@ Lớp học ảo nơi nhân vật vẽ tay của học sinh gặp nhau. Mỗi l�
 4. Khi tải ảnh, mỗi người chọn kiểu hiển thị cho nhân vật: **Nét vẽ** (tấm cắt giấy phẳng), **3D** (hình được bơm phồng thành khối, giữ nét vẽ gốc, tô bóng bằng nét gạch) hoặc **3D tô màu** (khối 3D, các vùng kín trong nét vẽ được tự tô màu; nút 🎲 đổi bộ màu). Vào lớp rồi vẫn đổi được, cả lớp thấy ngay.
 5. Trong lớp: chạm vào sân để đi, bấm biểu cảm (chào, cười, nhảy, tim, sao, khóc, giận) hoặc một câu chọn sẵn. Không có chat tự do.
 
+## Nhân vật đóng gói và tài khoản gán sẵn
+
+Ngoài cách tải ảnh, một người có thể vào lớp bằng **nhân vật được gán sẵn** (có bộ xương, biểu cảm, ba kiểu hiển thị như Queen of White):
+
+1. Gói nhân vật nằm trong `public/characters/<id>/` (tạo bằng skill `tao-nhan-vat`, xem `.claude/skills/tao-nhan-vat/SKILL.md`). Xem thử một gói: `/nhan-vat.html?id=<id>`.
+2. Quản trị viên mở `/admin.html`, nhập mã quản trị, rồi gán **tên + nhân vật + mã bảo mật** (để trống mã thì máy chủ tự sinh 6 số; mã chỉ hiện một lần).
+3. Người dùng nhập mã lớp, đúng tên và mã bảo mật là vào thẳng lớp với nhân vật đó, không cần tải ảnh và không qua bước duyệt. Tên đã gán không ai khác dùng được.
+
+Mã bảo mật chỉ lưu dạng băm trong `DATA_DIR/accounts.json`. Sai mã 5 lần thì tên đó bị khoá 5 phút. Mã quản trị lấy từ biến `ADMIN_TOKEN`; không đặt biến này thì trang quản trị bị tắt.
+
 ## Chạy máy chủ
 
 Cần Node.js 18 trở lên.
@@ -30,7 +40,7 @@ Trên VPS, chạy bằng root:
 curl -fsSL https://raw.githubusercontent.com/nhonphan001/game-3d/main/deploy/install.sh | sudo bash
 ```
 
-Script cài Node.js và git, tải repo vào `/opt/game-3d`, tạo dịch vụ systemd `lop-hoc` chạy bằng tài khoản riêng `lophoc` ở cổng 3000 (đổi bằng `PORT=3001`), và mở cổng đó trên firewalld. Chạy lại đúng lệnh này để cập nhật bản mới. Sau đó mở `http://<IP của VPS>:3000`.
+Script cài Node.js và git, tải repo vào `/opt/game-3d`, tạo dịch vụ systemd `lop-hoc` chạy bằng tài khoản riêng `lophoc` ở cổng 3000 (đổi bằng `PORT=3001`), và mở cổng đó trên firewalld. Lần đầu, script tạo mã quản trị trong `/etc/lop-hoc.env` và in ra một lần. Script cũng bật bộ hẹn giờ `lop-hoc-update.timer`: 5 phút một lần VPS tự lấy bản mới từ GitHub; nhân vật mới có ngay, còn khi mã máy chủ đổi thì dịch vụ tự khởi động lại (các lớp đang mở phải vào lại). Tài khoản đã gán lưu ở `/var/lib/lop-hoc`. Sau đó mở `http://<IP của VPS>:3000`.
 
 ## Dữ liệu và quyền riêng tư
 
@@ -50,6 +60,9 @@ Script cài Node.js và git, tải repo vào `/opt/game-3d`, tạo dịch vụ s
 ## Cấu trúc
 
 - `server.js` – máy chủ HTTP + WebSocket, giữ trạng thái lớp, kiểm tra quyền giáo viên
+- `public/rig/` – bộ xương, chuyển động, biểu cảm và đồ nghề dựng hình dùng chung cho các gói nhân vật
+- `public/characters/` – các gói nhân vật (`_mau` là mẫu để chép)
+- `public/admin.html` – trang gán nhân vật + tên + mã bảo mật
 - `public/figure.js` – dựng hình theo ba kiểu: cắt giấy, bơm phồng thành khối 3D, tự tô màu
 - `public/app.js` – tách nền ảnh, cảnh 3D (three.js), giao diện vào lớp và bảng duyệt
 - `public/index.html`, `public/style.css` – giao diện kiểu giấy vở

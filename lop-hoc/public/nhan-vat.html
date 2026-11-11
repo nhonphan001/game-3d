@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Xem nhân vật</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three.module.min.js", "three/addons/": "/vendor/" } }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div class="binding"></div>
+  <div id="room">
+    <header>
+      <div class="chip" id="title">Đang tải…</div>
+      <div class="styles mine" id="modes"></div>
+    </header>
+    <footer>
+      <div class="actions" id="acts" style="grid-template-columns: repeat(10, 1fr)"></div>
+      <p class="hint">Trang xem thử một gói nhân vật: <code>nhan-vat.html?id=&lt;mã nhân vật&gt;</code> · kéo để xoay</p>
+    </footer>
+  </div>
+  <script type="module" src="nhan-vat.js"></script>
+</body>
+</html>

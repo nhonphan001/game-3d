@@ -1,0 +1,9 @@
+[Unit]
+Description=Cap nhat Lop Hoc Net Ve 5 phut mot lan
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

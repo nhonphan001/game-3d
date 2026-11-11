@@ -30,12 +30,22 @@ else
 fi
 (cd "$DIR/lop-hoc" && npm ci --omit=dev --no-audit --no-fund)
 
+NEW_TOKEN=""
+if [ ! -f /etc/lop-hoc.env ]; then
+  echo "==> Tạo mã quản trị"
+  NEW_TOKEN="$(head -c 18 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 20)"
+  (umask 077; echo "ADMIN_TOKEN=$NEW_TOKEN" > /etc/lop-hoc.env)
+fi
+
 echo "==> Tạo tài khoản dịch vụ và đăng ký với systemd"
 id lophoc >/dev/null 2>&1 || useradd --system --no-create-home --shell /sbin/nologin lophoc
 sed "s/^Environment=PORT=.*/Environment=PORT=$PORT/" "$DIR/deploy/lop-hoc.service" > "/etc/systemd/system/$SERVICE.service"
+# Tự cập nhật: 5 phút một lần lấy bản mới từ GitHub (nhân vật mới có ngay, không cần khởi động lại)
+install -m 644 "$DIR/deploy/lop-hoc-update.service" "$DIR/deploy/lop-hoc-update.timer" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --quiet "$SERVICE"
 systemctl restart "$SERVICE"
+systemctl enable --quiet --now lop-hoc-update.timer
 
 if systemctl is-active --quiet firewalld; then
   echo "==> Mở cổng $PORT trên tường lửa"
@@ -48,6 +58,8 @@ if systemctl is-active --quiet "$SERVICE" && curl -fsS -o /dev/null "http://127.
   IP="$(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | head -n1)"
   echo
   echo "Xong. Lớp Học Nét Vẽ đang chạy tại: http://${IP:-<IP của VPS>}:$PORT"
+  echo "Trang quản trị (gán nhân vật + tên + mã bảo mật): http://${IP:-<IP của VPS>}:$PORT/admin.html"
+  if [ -n "$NEW_TOKEN" ]; then echo "MÃ QUẢN TRỊ (ghi lại, chỉ hiện lần này): $NEW_TOKEN"; else echo "Mã quản trị nằm trong /etc/lop-hoc.env (sudo cat /etc/lop-hoc.env)"; fi
   echo "Xem nhật ký: journalctl -u $SERVICE -f      Dừng: systemctl stop $SERVICE"
 else
   echo "Dịch vụ chưa chạy được. Xem lỗi: journalctl -u $SERVICE -n 50"

@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
 import { makeFigure, STYLES } from './figure.js';
+import { Rig, loadCharacter } from './rig/rig.js';
 
 const $ = (id) => document.getElementById(id);
 const INK = '#2434b4', PAPER = '#f3eedb', CARD = '#fbf8ec';
@@ -279,6 +280,13 @@ const defaultTex = inkCanvas(256, 384, (g) => {
 });
 const figShared = { uLight: { value: new THREE.Vector3(0.4, 0.7, 0.6) }, uPx: { value: 1 } };
 const LIGHT = new THREE.Vector3(0.45, 0.8, 0.6).normalize();
+const rigShared = { uLight: figShared.uLight, uPx: figShared.uPx, uBoil: { value: 0 } }; // cho nhân vật đóng gói
+scene.add(new THREE.HemisphereLight(0xffffff, 0xcfd6f5, 1.5));
+const sun = new THREE.DirectionalLight(0xffffff, 2);
+sun.position.copy(LIGHT).multiplyScalar(10);
+scene.add(sun);
+const EMOTE_ACTION = { wave: 'wave', laugh: 'laugh', cry: 'cry', angry: 'angry', heart: 'talk', star: 'laugh' };
+const turnTo = (a, b, k) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k;
 
 // ---------------------------------------------------------------- Nhân vật cắt giấy
 const avatars = new Map();
@@ -294,7 +302,18 @@ class Avatar {
     this.flip = new THREE.Group();
     this.h = 1.5;
     this.src = defaultTex.image; // ảnh nguồn (đã tách nền) để dựng hình theo kiểu đang chọn
-    if (m.img) {
+    this.heading = 0; this.char = m.char || null;
+    if (m.char) { // nhân vật đóng gói được gán sẵn: có bộ xương, biểu cảm và ba kiểu hiển thị riêng
+      loadCharacter(m.char).then((pkg) => {
+        if (this.gone) return;
+        this.rig = new Rig(pkg, rigShared);
+        this.rig.setMode(this.style);
+        scene.add(this.rig.group);
+        this.flip.visible = false;
+        this.h = this.rig.height;
+        this.label.position.y = this.h + 0.28;
+      }).catch(() => {}); // không tải được gói thì giữ hình mặc định
+    } else if (m.img) {
       const im = new Image();
       im.onload = () => { if (!this.gone) { this.src = im; this.rebuild(); } };
       im.src = m.img;
@@ -309,6 +328,7 @@ class Avatar {
     scene.add(this.root, this.shadow);
   }
   rebuild() { // dựng lại hình khi có ảnh hoặc khi đổi kiểu
+    if (this.rig) { this.rig.setMode(this.style); return; }
     if (this.fig) { this.flip.remove(this.fig.mesh); this.fig.dispose(); }
     this.fig = makeFigure(this.src, this.style, this.seed, figShared);
     this.flip.add(this.fig.mesh);
@@ -365,7 +385,15 @@ class Avatar {
     this.root.rotation.y = Math.atan2(camera.position.x - this.pos.x, camera.position.z - this.pos.z);
     this.flip.rotation.z = rz;
     this.fx += (this.face - this.fx) * (1 - Math.exp(-dt * 14)); // lật mượt khi đổi hướng
-    if (this.fig.flat) { // tấm giấy: lật trái/phải
+    if (this.rig) {
+      const moving = dist > 0.05;
+      this.heading = moving ? Math.atan2(d.x, d.z) : turnTo(this.heading, Math.atan2(camera.position.x - this.pos.x, camera.position.z - this.pos.z), 1 - Math.exp(-dt * 3));
+      const action = this.y > 0 ? 'jump' : this.speed > 2.5 ? 'run' : this.speed > 0.15 ? 'walk'
+        : e && EMOTE_ACTION[e] ? EMOTE_ACTION[e] : this.bubble && this.bubbleT < 2.6 ? 'talk' : 'idle';
+      this.root.position.y = 0; // nhãn tên đứng yên, nhân vật tự nhún theo bộ xương
+      this.rig.update(dt, t, { x: this.pos.x + dx, z: this.pos.z, y: this.y, vy: this.vy, speed: this.speed, phase: this.phase, heading: this.heading, action },
+        { camera, width: canvas.width, height: canvas.height });
+    } else if (this.fig.flat) { // tấm giấy: lật trái/phải
       this.flip.scale.set(this.fx * sx * this.spawn, sy * this.spawn, 1);
       this.flip.rotation.y = 0;
     } else {             // khối 3D: xoay người theo hướng đi, đứng yên thì đung đưa nhẹ để thấy khối
@@ -383,6 +411,7 @@ class Avatar {
   }
   dispose() {
     this.gone = true;
+    this.rig?.dispose();
     scene.remove(this.root, this.shadow);
     this.fig.dispose();
     this.label.material.map.dispose();
@@ -534,15 +563,16 @@ $('joinForm').onsubmit = (e) => {
   e.preventDefault();
   const name = $('name').value.trim(), code = $('code').value.trim().toUpperCase();
   if (!name) { $('err').textContent = role === 'teacher' ? 'Hãy nhập tên giáo viên.' : 'Hãy nhập tên của em.'; return; }
+  const pin = $('pin').value.trim(); // có mã bảo mật = dùng nhân vật đã được gán sẵn, không cần ảnh
   if (role === 'student') {
     if (code.length !== 6) { $('err').textContent = 'Mã lớp gồm 6 ký tự.'; return; }
-    if (!cut) { $('err').textContent = 'Em hãy chọn ảnh nhân vật trước.'; return; }
+    if (!cut && !pin) { $('err').textContent = 'Em hãy chọn ảnh nhân vật, hoặc nhập mã bảo mật nếu đã có nhân vật riêng.'; return; }
   }
-  const img = cut ? toDataURL(cut) : null;
-  if (cut && !img) { $('err').textContent = 'Ảnh quá lớn, em chọn ảnh khác nhé.'; return; }
+  const img = cut && !pin ? toDataURL(cut) : null;
+  if (cut && !pin && !img) { $('err').textContent = 'Ảnh quá lớn, em chọn ảnh khác nhé.'; return; }
   $('err').textContent = '';
   $('submit').disabled = true;
-  connect(role === 'teacher' ? { t: 'create', name, img, ...look } : { t: 'join', code, name, img, ...look });
+  connect(role === 'teacher' ? { t: 'create', name, img, pin, ...look } : { t: 'join', code, name, img, pin, ...look });
 };
 const leave = () => { if (session.ws) { session.ws.onclose = null; session.ws.close(); } resetRoom(''); };
 $('cancelWait').onclick = leave;
@@ -623,6 +653,7 @@ renderer.setAnimationLoop(() => {
     camera.aspect = w / h; camera.fov = w < h ? 56 : 42; camera.updateProjectionMatrix();
   }
   figShared.uPx.value = pr;
+  rigShared.uBoil.value = Math.floor(t * 8) * 1.7;
   figShared.uLight.value.copy(LIGHT).transformDirection(camera.matrixWorldInverse);
   if (pv.fig && !$('home').hidden) { // khung xem thử ở màn hình vào lớp
     pv.pivot.rotation.y = Math.sin(t * 0.9) * (pv.fig.flat ? 0.3 : 0.8);

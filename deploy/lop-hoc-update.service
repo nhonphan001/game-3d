@@ -1,0 +1,7 @@
+[Unit]
+Description=Cap nhat Lop Hoc Net Ve tu GitHub
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/game-3d/deploy/update.sh

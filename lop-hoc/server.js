@@ -9,6 +9,8 @@ const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 3000;
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');   // nơi lưu tài khoản (ngoài mã nguồn)
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';                        // để trống = tắt trang quản trị
 const MAX_STUDENTS = 40;
 const MAX_CLASSES = 200;
 const MAX_IMG = 400 * 1024;          // ảnh nhân vật đã tách nền, PNG
@@ -20,6 +22,55 @@ const EMOTES = ['wave', 'laugh', 'cry', 'angry', 'jump', 'heart', 'star'];
 const STYLES = ['flat', 'sketch', 'color']; // nét vẽ / 3D / 3D tô màu
 const PHRASES = 8;                   // số câu chọn sẵn (nội dung nằm ở trình duyệt)
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+// ---------------------------------------------------------------- Nhân vật đóng gói + tài khoản được gán sẵn
+// Gói nhân vật nằm trong public/characters/<id>/character.json (đẩy lên bằng git).
+// Tài khoản = tên + mã bảo mật + nhân vật, do quản trị viên gán; mã chỉ lưu dạng băm.
+const CHAR_DIR = path.join(__dirname, 'public', 'characters');
+function listCharacters() {
+  let dirs = [];
+  try { dirs = fs.readdirSync(CHAR_DIR, { withFileTypes: true }); } catch { return []; }
+  const out = [];
+  for (const d of dirs) {
+    if (!d.isDirectory() || !/^[a-z0-9-]{1,40}$/.test(d.name)) continue;
+    try {
+      const meta = JSON.parse(fs.readFileSync(path.join(CHAR_DIR, d.name, 'character.json'), 'utf8'));
+      out.push({ id: d.name, title: String(meta.title || d.name).slice(0, 60) });
+    } catch { /* gói hỏng thì bỏ qua */ }
+  }
+  return out;
+}
+const ACC_FILE = path.join(DATA_DIR, 'accounts.json');
+const accounts = new Map(); // khoá = tên viết thường
+try { for (const a of JSON.parse(fs.readFileSync(ACC_FILE, 'utf8'))) accounts.set(a.name.toLowerCase(), a); } catch { /* chưa có tài khoản nào */ }
+function saveAccounts() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmpFile = `${ACC_FILE}.tmp`;
+  fs.writeFileSync(tmpFile, JSON.stringify([...accounts.values()], null, 1), { mode: 0o600 });
+  fs.renameSync(tmpFile, ACC_FILE);
+}
+const hashCode = (code, salt) => crypto.scryptSync(String(code), salt, 32).toString('hex');
+const sameText = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const fails = new Map(); // chống dò mã: khoá theo tên và theo địa chỉ
+function blocked(key) { const f = fails.get(key); return f && f.until > Date.now(); }
+function failed(key, max) {
+  const f = fails.get(key) || { n: 0, until: 0 };
+  if (++f.n >= max) { f.n = 0; f.until = Date.now() + 5 * 60 * 1000; }
+  fails.set(key, f);
+}
+// Trả về { acc } nếu đúng tên + mã, { err } nếu sai
+function login(name, pin, ip) {
+  const acc = accounts.get(name.toLowerCase());
+  const keys = [`n:${name.toLowerCase()}`, `i:${ip}`];
+  if (keys.some(blocked)) return { err: 'Nhập sai quá nhiều lần. Hãy thử lại sau 5 phút.' };
+  if (!acc || typeof pin !== 'string' || pin.length > 64 || !sameText(hashCode(pin, acc.salt), acc.hash)) {
+    failed(keys[0], 5); failed(keys[1], 20);
+    return { err: 'Tên hoặc mã bảo mật không đúng.' };
+  }
+  fails.delete(keys[0]);
+  if (!listCharacters().some((c) => c.id === acc.char)) return { err: 'Nhân vật của tài khoản này chưa có trên máy chủ.' };
+  return { acc };
+}
 
 const classes = new Map(); // mã lớp -> { code, token, teacher, members: Map, pending: Map, emptySince }
 
@@ -50,7 +101,7 @@ const clampPos = (x, z) => {
   return d > ROOM_R ? { x: (x / d) * ROOM_R, z: (z / d) * ROOM_R } : { x, z };
 };
 const lookOf = (d) => ({ style: STYLES.includes(d.style) ? d.style : 'flat', seed: Number.isInteger(d.seed) ? ((d.seed % 100) + 100) % 100 : 0 });
-const pub = (cls, m) => ({ id: m.id, name: m.name, role: m.role, style: m.style, seed: m.seed, img: m.img ? `/img/${cls.code}/${m.imgKey}.png` : null, x: m.x, z: m.z });
+const pub = (cls, m) => ({ id: m.id, name: m.name, role: m.role, style: m.style, seed: m.seed, char: m.char || null, img: m.img ? `/img/${cls.code}/${m.imgKey}.png` : null, x: m.x, z: m.z });
 const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); };
 function broadcast(cls, msg, except) {
   for (const m of cls.members.values()) if (m !== except) send(m.ws, msg);
@@ -77,7 +128,7 @@ function touchEmpty(cls) {
 // ---------------------------------------------------------------- HTTP
 const PUBLIC = path.join(__dirname, 'public');
 const VENDOR = path.join(__dirname, '..', 'nhan-vat-3d', 'vendor');
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml' };
+const MIME = { '.json': 'application/json; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml' };
 function serveFile(res, root, rel) {
   const file = path.normalize(path.join(root, rel));
   if (!file.startsWith(root + path.sep)) { res.writeHead(403).end(); return; }
@@ -86,10 +137,54 @@ function serveFile(res, root, rel) {
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff' }).end(data);
   });
 }
+const json = (res, code, body) => res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(JSON.stringify(body));
+// API quản trị: gán nhân vật + tên + mã bảo mật. Cần "Authorization: Bearer <ADMIN_TOKEN>".
+function adminApi(req, res, url) {
+  const ip = req.socket.remoteAddress || '?';
+  if (!ADMIN_TOKEN) return json(res, 503, { error: 'Trang quản trị chưa được bật trên máy chủ (thiếu ADMIN_TOKEN).' });
+  if (blocked(`a:${ip}`)) return json(res, 429, { error: 'Sai mã quản trị quá nhiều lần. Thử lại sau 5 phút.' });
+  const given = (req.headers.authorization || '').replace(/^Bearer /, '');
+  if (!sameText(crypto.createHash('sha256').update(given).digest('hex'), crypto.createHash('sha256').update(ADMIN_TOKEN).digest('hex'))) {
+    failed(`a:${ip}`, 8);
+    return json(res, 401, { error: 'Mã quản trị không đúng.' });
+  }
+  const state = () => ({ characters: listCharacters(), accounts: [...accounts.values()].map((a) => ({ name: a.name, char: a.char, created: a.created })) });
+  if (req.method === 'GET' && url.pathname === '/api/admin/state') return json(res, 200, state());
+  if (req.method === 'DELETE' && url.pathname === '/api/admin/accounts') {
+    accounts.delete(String(url.searchParams.get('name') || '').toLowerCase());
+    saveAccounts();
+    return json(res, 200, state());
+  }
+  if (req.method === 'POST' && url.pathname === '/api/admin/accounts') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; if (raw.length > 4096) req.destroy(); });
+    req.on('end', () => {
+      let d;
+      try { d = JSON.parse(raw); } catch { return json(res, 400, { error: 'Dữ liệu không hợp lệ.' }); }
+      const name = cleanName(d.name);
+      if (!name) return json(res, 400, { error: 'Hãy nhập tên.' });
+      if (!listCharacters().some((c) => c.id === d.char)) return json(res, 400, { error: 'Không có nhân vật này.' });
+      let code = typeof d.code === 'string' ? d.code.trim() : '';
+      if (code && (code.length < 4 || code.length > 32)) return json(res, 400, { error: 'Mã bảo mật dài từ 4 đến 32 ký tự.' });
+      if (!code) code = String(crypto.randomInt(0, 1e6)).padStart(6, '0');
+      const salt = rid(8);
+      accounts.set(name.toLowerCase(), { name, char: d.char, salt, hash: hashCode(code, salt), created: new Date().toISOString().slice(0, 10) });
+      saveAccounts();
+      fails.delete(`n:${name.toLowerCase()}`);
+      json(res, 200, { ...state(), issued: { name, char: d.char, code } }); // mã chỉ hiện đúng một lần này
+    });
+    return;
+  }
+  json(res, 404, { error: 'Không có chức năng này.' });
+}
+
 const server = http.createServer((req, res) => {
+  let url;
+  try { url = new URL(req.url, 'http://x'); } catch { res.writeHead(400).end(); return; }
+  if (url.pathname.startsWith('/api/admin/')) return adminApi(req, res, url);
   if (req.method !== 'GET') { res.writeHead(405).end(); return; }
   let p;
-  try { p = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { res.writeHead(400).end(); return; }
+  try { p = decodeURIComponent(url.pathname); } catch { res.writeHead(400).end(); return; }
   const im = /^\/img\/([A-Z0-9]{6})\/([0-9a-f]{16})\.png$/.exec(p);
   if (im) {
     const cls = classes.get(im[1]);
@@ -107,15 +202,29 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 640 * 1024 });
 const fail = (ws, msg) => send(ws, { t: 'error', msg });
 
+function admit(cls, m) { // cho một học sinh vào lớp
+  const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * 4;
+  m.x = Math.sin(a) * r; m.z = Math.cos(a) * r;
+  cls.members.set(m.id, m);
+  broadcast(cls, { t: 'joined', m: pub(cls, m) }, m);
+  welcome(cls, m);
+}
+
 const handlers = {
   create(ws, d) {
     if (ws.cls) return;
     if (classes.size >= MAX_CLASSES) return fail(ws, 'Máy chủ đang đầy lớp, thử lại sau nhé.');
-    const name = cleanName(d.name);
+    let name = cleanName(d.name);
     if (!name) return fail(ws, 'Hãy nhập tên giáo viên.');
-    const img = d.img ? parseImg(d.img) : null;
-    if (d.img && !img) return fail(ws, 'Ảnh không hợp lệ hoặc quá lớn.');
-    const teacher = { id: rid(4), name, role: 'teacher', ws, img, imgKey: rid(), x: 0, z: -3, ...lookOf(d) };
+    let char = null;
+    if (d.pin) { // giáo viên có nhân vật được gán sẵn
+      const r = login(name, d.pin, ws.ip);
+      if (r.err) return fail(ws, r.err);
+      char = r.acc.char; name = r.acc.name; // dùng đúng cách viết tên đã gán
+    } else if (accounts.has(name.toLowerCase())) return fail(ws, 'Tên này đã được dành riêng. Hãy nhập mã bảo mật hoặc chọn tên khác.');
+    const img = !char && d.img ? parseImg(d.img) : null;
+    if (!char && d.img && !img) return fail(ws, 'Ảnh không hợp lệ hoặc quá lớn.');
+    const teacher = { id: rid(4), name, role: 'teacher', ws, img, imgKey: rid(), char, x: 0, z: -3, ...lookOf(d) };
     const cls = { code: newCode(), token: rid(16), teacher, members: new Map(), pending: new Map(), emptySince: 0 };
     classes.set(cls.code, cls);
     ws.cls = cls; ws.me = teacher;
@@ -138,13 +247,20 @@ const handlers = {
     if (ws.cls) return;
     const cls = classes.get(String(d.code || '').toUpperCase().trim());
     if (!cls) return fail(ws, 'Không tìm thấy lớp với mã này.');
-    const name = cleanName(d.name);
+    let name = cleanName(d.name);
     if (!name) return fail(ws, 'Hãy nhập tên của em.');
-    const img = parseImg(d.img);
-    if (!img) return fail(ws, 'Ảnh nhân vật không hợp lệ hoặc quá lớn.');
+    let char = null;
+    if (d.pin) { // tài khoản được gán sẵn nhân vật: đúng tên + mã bảo mật là vào thẳng lớp
+      const r = login(name, d.pin, ws.ip);
+      if (r.err) return fail(ws, r.err);
+      char = r.acc.char; name = r.acc.name; // dùng đúng cách viết tên đã gán
+    } else if (accounts.has(name.toLowerCase())) return fail(ws, 'Tên này đã được dành riêng. Em nhập mã bảo mật hoặc chọn tên khác nhé.');
+    const img = char ? null : parseImg(d.img);
+    if (!char && !img) return fail(ws, 'Ảnh nhân vật không hợp lệ hoặc quá lớn.');
     if (cls.members.size + cls.pending.size >= MAX_STUDENTS) return fail(ws, `Lớp đã đủ ${MAX_STUDENTS} học sinh.`);
-    if (nameTaken(cls, name)) return fail(ws, 'Tên này đã có bạn dùng trong lớp, em chọn tên khác nhé.');
-    const me = { id: rid(4), name, role: 'student', ws, img, imgKey: rid(), x: 0, z: 0, ...lookOf(d) };
+    if (nameTaken(cls, name)) return fail(ws, char ? 'Tên này đang ở trong lớp rồi.' : 'Tên này đã có bạn dùng trong lớp, em chọn tên khác nhé.');
+    const me = { id: rid(4), name, role: 'student', ws, img, imgKey: rid(), char, x: 0, z: 0, ...lookOf(d) };
+    if (char) { ws.cls = cls; ws.me = me; touchEmpty(cls); admit(cls, me); return; }
     cls.pending.set(me.id, me);
     ws.cls = cls; ws.me = me;
     touchEmpty(cls);
@@ -157,12 +273,8 @@ const handlers = {
     const m = cls.pending.get(d.id);
     if (!m) return;
     cls.pending.delete(m.id);
-    const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * 4;
-    m.x = Math.sin(a) * r; m.z = Math.cos(a) * r;
-    cls.members.set(m.id, m);
     send(ws, { t: 'resolved', id: m.id });
-    broadcast(cls, { t: 'joined', m: pub(cls, m) }, m);
-    welcome(cls, m);
+    admit(cls, m);
   },
   reject(ws, d) {
     const cls = ws.cls;
@@ -213,6 +325,7 @@ const handlers = {
 const perIp = new Map();
 wss.on('connection', (ws, req) => {
   const ip = req.socket.remoteAddress || '?';
+  ws.ip = ip;
   const n = (perIp.get(ip) || 0) + 1;
   perIp.set(ip, n);
   ws.on('close', () => { const k = perIp.get(ip) - 1; if (k > 0) perIp.set(ip, k); else perIp.delete(ip); });

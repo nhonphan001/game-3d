@@ -37,7 +37,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .tabs button { flex: 1; }
 form { display: flex; flex-direction: column; gap: 10px; }
 label { display: flex; flex-direction: column; gap: 2px; }
-input[type=text] {
+input[type=text], input[type=password] {
   padding: 8px 12px; background: #fff; border: 2px solid var(--ink); font-size: 19px;
   border-radius: 255px 14px 225px 14px / 14px 225px 14px 255px; min-width: 0;
 }

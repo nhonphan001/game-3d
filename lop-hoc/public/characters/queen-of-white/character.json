@@ -1,0 +1,19 @@
+{
+  "id": "queen-of-white",
+  "title": "Queen of White",
+  "version": 1,
+  "height": 2.35,
+  "model": "model.js",
+  "doll": {
+    "metersPerPx": 0.00211,
+    "feet": { "x": 370, "y": 1050 },
+    "ink": "#1f2f9c",
+    "paper": "#fdfaf4",
+    "body": { "file": "layers/body.png", "x": -2, "y": 366, "w": 744, "h": 685, "px": 370, "py": 1050 },
+    "head": { "file": "layers/head.png", "x": 318, "y": 153, "w": 339, "h": 349, "px": 500, "py": 480 },
+    "companion": { "file": "layers/companion.png", "x": -2, "y": 73, "w": 329, "h": 397, "px": 150, "py": 265 },
+    "face": { "eyes": [[111, 255, 11], [183, 256, 14]], "mouth": [140, 295] },
+    "hand": { "x": 664, "y": 600 },
+    "anger": { "x": 642, "y": 196 }
+  }
+}
