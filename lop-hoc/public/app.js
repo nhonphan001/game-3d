@@ -951,7 +951,7 @@ syncStyleButtons();
 // ---------------------------------------------------------------- Video YouTube trên bảng
 // Khung video phủ khít lên bảng trên màn hình (bám theo camera); camera quay lệch khỏi bảng thì thành cửa sổ nhỏ ở góc.
 // Giáo viên điều khiển: máy giáo viên báo phát / dừng / tua lên máy chủ, máy học sinh chạy theo.
-const yt = { loading: null, player: null, ready: false, creating: false, sent: 0, t0: 0, last: '', docked: false };
+const yt = { loading: null, player: null, ready: false, creating: false, sent: 0, t0: 0, last: '', docked: false, step: 0, lastSeek: 0, lastPlay: 0, tapAt: 0, bufAt: 0 };
 const vid = { cur: null }; // { id, state: 'playing' | 'paused', pos, at }
 const _v = new THREE.Vector3(), _c = new THREE.Vector3();
 function loadYT() { // nạp thư viện chính thức của YouTube một lần
@@ -968,7 +968,7 @@ function loadYT() { // nạp thư viện chính thức của YouTube một lần
   });
   return yt.loading;
 }
-const showVideoMsg = (text) => { $('videoMsg').textContent = text || ''; $('videoMsg').hidden = !text; };
+const showVideoMsg = (text) => { $('videoMsg').textContent = text || ''; $('videoMsg').hidden = !text; if (!text) delete $('videoMsg').dataset.kind; };
 const videoWant = () => { const c = vid.cur; return !c ? 0 : c.state === 'playing' ? c.pos + (performance.now() - c.at) / 1000 : c.pos; };
 async function ensurePlayer() {
   if (yt.player || yt.creating || !vid.cur) return;
@@ -982,32 +982,57 @@ async function ensurePlayer() {
     $('videoDock').prepend(host);
     yt.player = new YT.Player('ytHost', {
       host: 'https://www.youtube-nocookie.com', width: '100%', height: '100%', videoId: vid.cur.id,
-      playerVars: { autoplay: 1, controls: teacher ? 1 : 0, disablekb: teacher ? 0 : 1, fs: teacher ? 1 : 0, rel: 0, playsinline: 1, modestbranding: 1, iv_load_policy: 3,
+      playerVars: { controls: teacher ? 1 : 0, disablekb: teacher ? 0 : 1, fs: teacher ? 1 : 0, rel: 0, playsinline: 1, modestbranding: 1, iv_load_policy: 3,
         start: Math.floor(videoWant()), origin: location.origin, enablejsapi: 1 },
       events: {
         onReady: (e) => {
-          yt.ready = true;
+          yt.ready = true; yt.t0 = performance.now(); yt.step = 0;
           if (!navigator.userActivation?.hasBeenActive) e.target.mute(); // chưa chạm vào trang: trình duyệt chỉ cho tự phát khi tắt tiếng
+          if (vid.cur?.state === 'playing') { yt.lastPlay = performance.now(); e.target.playVideo(); }
           reconcile(true);
         },
-        onStateChange: (e) => { if (session.role === 'teacher') teacherReport(true); else if (e.data === 1) $('videoPlay').hidden = true; },
-        onError: () => showVideoMsg('Video này không phát được (chủ video có thể không cho nhúng). Hãy chọn video khác.'),
+        onStateChange: (e) => {
+          if (session.role === 'teacher') teacherReport(true);
+          if (e.data === 1) {
+            clearStartHelp();
+            const pl = yt.player;
+            if (session.role !== 'teacher' && pl && vid.cur?.state === 'playing') { // vừa phát được sau khi tải: bắt kịp giáo viên ngay một lần
+              const want = videoWant(), cur = pl.getCurrentTime?.() ?? 0, now = performance.now();
+              if (Math.abs(cur - want) > 2.5 && now - yt.lastSeek > 1500) { yt.lastSeek = now; pl.seekTo(want, true); }
+            }
+          }
+        },
+        onError: (e) => { // mã lỗi của YouTube: nói rõ nguyên nhân để dễ xử lý
+          const c = e?.data;
+          showVideoMsg(c === 101 || c === 150 ? 'Chủ video không cho phép chiếu ở trang khác. Cô hãy chọn video khác.'
+            : c === 100 ? 'Video đã bị xoá hoặc để riêng tư. Cô hãy chọn video khác.'
+            : c === 153 ? 'YouTube từ chối vì thiếu thông tin trang nhúng (mã lỗi 153).'
+            : c === 2 ? 'Đường dẫn video không đúng (mã lỗi 2).'
+            : `Video không phát được (mã lỗi ${c ?? '?'}).`);
+        },
       },
     });
   } catch (e) {
     showVideoMsg('Không tải được YouTube. Em kiểm tra mạng nhé.');
   } finally { yt.creating = false; }
 }
-function reconcile(force) { // học sinh: chạy theo vị trí và trạng thái của giáo viên
+function clearStartHelp() { // đã phát được: bỏ mọi gợi ý bắt đầu, chắn lại video
+  $('videoPlay').hidden = true; $('videoHint').hidden = true; $('videoDock').classList.remove('direct'); yt.tapAt = 0; yt.bufAt = 0;
+  if (!$('videoMsg').hidden && $('videoMsg').dataset.kind === 'buffering') showVideoMsg('');
+}
+// Học sinh chạy theo giáo viên. Quan trọng: chỉ tua khi video ĐANG PHÁT và lệch nhiều, và không tua liên tục. Khi video còn
+// đang tải hoặc bị chặn tự phát thì vị trí của nó đứng yên; nếu cứ tua theo giáo viên mỗi giây thì nó không bao giờ tải xong.
+function reconcile(force) {
   const p = yt.player;
   if (!p || !yt.ready || !vid.cur || session.role === 'teacher') return;
-  const want = videoWant(), cur = p.getCurrentTime?.() ?? 0, st = p.getPlayerState?.();
+  const now = performance.now(), want = videoWant(), cur = p.getCurrentTime?.() ?? 0, st = p.getPlayerState?.();
   if (vid.cur.state === 'playing') {
-    if (st !== 1 && st !== 3 && (force || st === 2 || st === 0 || st === 5)) p.playVideo();
-    if (Math.abs(cur - want) > 2.5) p.seekTo(want, true);
+    if (st === 1) {
+      if (Math.abs(cur - want) > 4 && now - yt.lastSeek > 5000) { yt.lastSeek = now; p.seekTo(want, true); }
+    } else if (st !== 3 && (force || now - yt.lastPlay > 3000)) { yt.lastPlay = now; p.playVideo(); } // st = 3: đang tải, cứ chờ
   } else {
     if (st === 1 || st === 3) p.pauseVideo();
-    if (Math.abs(cur - want) > 1) p.seekTo(want, true);
+    else if (Math.abs(cur - want) > 2 && now - yt.lastSeek > 3000) { yt.lastSeek = now; p.seekTo(want, true); p.pauseVideo(); }
   }
 }
 function teacherReport(force) { // giáo viên: phát hiện bấm phát / dừng / tua rồi báo cho cả lớp
@@ -1026,36 +1051,48 @@ function teacherReport(force) { // giáo viên: phát hiện bấm phát / dừn
 }
 function applyVideo(v) { // v: { id, state, pos } hoặc null
   if (!v) { if (vid.cur || yt.player) { vid.cur = null; teardownVideo(); } return; }
-  const prev = vid.cur;
+  const prev = vid.cur, isNew = !prev || prev.id !== v.id;
   vid.cur = { id: v.id, state: v.state, pos: v.pos, at: performance.now() };
-  yt.t0 = performance.now();
+  if (isNew) { yt.t0 = performance.now(); yt.step = 0; yt.tapAt = 0; } // chỉ đặt lại bộ đếm khi đổi video, không đặt lại mỗi lần giáo viên báo nhịp
   showVideoMsg('');
   drawScreen(true);
   $('videoDock').hidden = false;
   $('videoDock').classList.toggle('teacher', session.role === 'teacher');
   if (yt.player && yt.ready) {
-    if (!prev || prev.id !== v.id) yt.player.loadVideoById({ videoId: v.id, startSeconds: v.pos });
+    if (isNew) yt.player.loadVideoById({ videoId: v.id, startSeconds: v.pos });
     reconcile(true);
   } else ensurePlayer();
-  if ((!prev || prev.id !== v.id) && !screenVisible(16)) focusScreen(); // video mới mà màn chiếu đang khuất: quay camera sang xem
+  if (isNew && !screenVisible(16)) focusScreen(); // video mới mà màn chiếu đang khuất: quay camera sang xem
 }
 function teardownVideo() {
   try { yt.player?.destroy(); } catch { /* đã gỡ */ }
   yt.player = null; yt.ready = false;
   document.getElementById('ytHost')?.remove();
-  $('videoDock').hidden = true; $('videoDock').classList.remove('big', 'float');
-  showVideoMsg(''); $('videoPlay').hidden = true;
+  $('videoDock').hidden = true; $('videoDock').classList.remove('big', 'float', 'direct');
+  showVideoMsg(''); $('videoPlay').hidden = true; $('videoHint').hidden = true; $('videoSound').hidden = true; yt.tapAt = 0; yt.bufAt = 0;
   drawScreen(false);
   if (cam.mode === 'screen') followAvatar();
 }
-function videoTick() { // mỗi giây: giáo viên báo, học sinh chỉnh theo; cập nhật nút tiếng và nút "chạm để xem"
+// Mỗi giây: giáo viên báo, học sinh chỉnh theo. Nếu video chưa chạy thì leo từng bậc, bậc sau chỉ dùng khi bậc trước thất bại:
+//  1) tự phát (có tiếng nếu trang đã được chạm)  2) sau 2,5 giây: tắt tiếng rồi phát lại (trình duyệt luôn cho tự phát khi tắt tiếng)
+//  3) sau 5,5 giây: nút "Chạm để xem"  4) nếu chạm mà vẫn không phát (iPhone): bỏ lớp chắn để chạm thẳng vào nút ▶ của video.
+function videoTick() {
   if (!vid.cur || !yt.ready) return;
-  if (session.role === 'teacher') teacherReport(false); else reconcile(false);
-  $('videoMute').textContent = yt.player.isMuted?.() ? '🔇' : '🔊';
-  if (session.role !== 'teacher') {
-    const st = yt.player.getPlayerState?.();
-    $('videoPlay').hidden = !(vid.cur.state === 'playing' && st !== 1 && st !== 3 && performance.now() - yt.t0 > 2500); // trình duyệt chặn tự phát: cần một cái chạm
-  }
+  const p = yt.player, teacher = session.role === 'teacher', now = performance.now(), dock = $('videoDock');
+  if (teacher) teacherReport(false); else reconcile(false);
+  const st = p.getPlayerState?.(), playing = st === 1 || st === 3, muted = !!p.isMuted?.();
+  $('videoMute').textContent = muted ? '🔇' : '🔊';
+  if (vid.cur.state === 'playing' && !playing) {
+    const waited = now - yt.t0;
+    if (waited > 2500 && yt.step < 1) { yt.step = 1; p.mute?.(); yt.lastPlay = now; p.playVideo?.(); }
+    if (!teacher && waited > 5500 && !dock.classList.contains('direct')) $('videoPlay').hidden = false;
+    if (!teacher && yt.tapAt && now - yt.tapAt > 2200) { dock.classList.add('direct'); $('videoPlay').hidden = true; $('videoHint').hidden = false; yt.tapAt = 0; }
+  } else if (st === 1) clearStartHelp();
+  if (st === 3 && vid.cur.state === 'playing') { // tải quá lâu: báo cho học sinh biết là máy đang chờ chứ không phải hỏng
+    yt.bufAt = yt.bufAt || now;
+    if (now - yt.bufAt > 8000 && $('videoMsg').hidden) { showVideoMsg('Đang tải video… mạng hơi chậm, em chờ một chút nhé.'); $('videoMsg').dataset.kind = 'buffering'; }
+  } else if (st !== 3) yt.bufAt = 0;
+  $('videoSound').hidden = teacher || st !== 1 || !muted;
 }
 setInterval(videoTick, 1000);
 const cam = { mode: 'follow', t: 0 }; // 'follow': bám theo nhân vật; 'screen': nhìn vào màn chiếu
@@ -1120,7 +1157,8 @@ $('videoLook').onclick = toggleLook;
 $('videoLookT').onclick = toggleLook;
 $('videoMute').onclick = () => { const p = yt.player; if (!p?.isMuted) return; if (p.isMuted()) p.unMute(); else p.mute(); videoTick(); };
 $('videoBig').onclick = () => { $('videoDock').classList.toggle('big'); yt.last = ''; };
-$('videoPlay').onclick = () => { yt.player?.unMute?.(); yt.player?.playVideo?.(); $('videoPlay').hidden = true; };
+$('videoPlay').onclick = () => { yt.player?.unMute?.(); yt.player?.playVideo?.(); $('videoPlay').hidden = true; yt.tapAt = performance.now(); };
+$('videoSound').onclick = () => { yt.player?.unMute?.(); $('videoSound').hidden = true; videoTick(); };
 $('videoForm').onsubmit = (e) => {
   e.preventDefault();
   const url = $('videoUrl').value.trim();
