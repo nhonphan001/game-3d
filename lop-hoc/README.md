@@ -12,7 +12,7 @@ Lớp học ảo nơi nhân vật vẽ tay của học sinh gặp nhau. Mỗi l�
 6. **Hình vẽ:** nút "🖼️ Gửi hình vẽ" cho mỗi người gửi một bức vẽ (ảnh chụp, tự thu nhỏ). Hình chờ giáo viên duyệt; duyệt xong nhân vật **cầm hình** trên tay cho cả lớp thấy. Có nút "Cất hình" / "Cầm lại hình". Mỗi người giữ tối đa 2 hình, hình mới đẩy hình cũ nhất ra.
 7. **Bảng:** giáo viên bấm vào một hình trong mục "Hình trong lớp" để chiếu lên bảng cho cả lớp; bấm "Gỡ hình khỏi bảng" để trở lại. Ai bấm vào bảng cũng xem được hình to.
 8. **Công cụ của giáo viên:** "Tắt tiếng" từng bạn, xoá từng tin nhắn (✕ cạnh tin), "Tắt trò chuyện cả lớp", "Tự duyệt hình vẽ" (bỏ bước xem trước), xoá hình khỏi thư viện, "Mời ra". Hình của một bạn tự mất khi bạn rời lớp.
-9. Trong lớp: chạm vào sân để đi, bấm biểu cảm (chào, cười, nhảy, tim, sao, khóc, giận) hoặc một câu chọn sẵn. Không có chat tự do.
+9. Trong lớp: chạm vào sân để đi, bấm biểu cảm (chào, cười, nhảy, tim, sao, khóc, giận) hoặc một câu chọn sẵn, hoặc nhắn tin ở ô trò chuyện.
 
 ## Nhân vật đóng gói và tài khoản gán sẵn
 
