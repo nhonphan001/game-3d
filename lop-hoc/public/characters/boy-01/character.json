@@ -1,0 +1,18 @@
+{
+  "id": "boy-01",
+  "title": "Boy 01",
+  "version": 1,
+  "height": 2.35,
+  "model": "model.js",
+  "doll": {
+    "metersPerPx": 0.00266,
+    "feet": { "x": 80, "y": 696 },
+    "ink": "#9a2a3c",
+    "paper": "#fdfaf4",
+    "head": { "file": "layers/head.png", "x": -3, "y": 1, "w": 257, "h": 398, "px": 110, "py": 390 },
+    "body": { "file": "layers/body.png", "x": 18, "y": 393, "w": 158, "h": 322, "px": 80, "py": 688 },
+    "face": { "eyes": [[75, 257, 17], [157, 257, 16]], "mouth": [110, 309] },
+    "hand": { "x": 168, "y": 560 },
+    "anger": { "x": 200, "y": 40 }
+  }
+}
