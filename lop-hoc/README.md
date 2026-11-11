@@ -11,8 +11,9 @@ Lớp học ảo nơi nhân vật vẽ tay của học sinh gặp nhau. Mỗi l�
 5. **Trò chuyện:** nút "💬 Trò chuyện" ở góc trên mở ô chat; tin hiện cả trong ô chat lẫn bóng thoại trên đầu nhân vật. Mỗi tin dài tối đa 120 ký tự, chỉ chữ (không gửi được hình hay đường dẫn bấm được), và mỗi người nhắn tối đa khoảng 1 tin mỗi giây, 8 tin mỗi 20 giây.
 6. **Hình vẽ:** nút "🖼️ Gửi hình vẽ" cho mỗi người gửi một bức vẽ (ảnh chụp, tự thu nhỏ). Hình chờ giáo viên duyệt; duyệt xong nhân vật **cầm hình** trên tay cho cả lớp thấy. Có nút "Cất hình" / "Cầm lại hình". Mỗi người giữ tối đa 2 hình, hình mới đẩy hình cũ nhất ra.
 7. **Bảng:** giáo viên bấm vào một hình trong mục "Hình trong lớp" để chiếu lên bảng cho cả lớp; bấm "Gỡ hình khỏi bảng" để trở lại. Ai bấm vào bảng cũng xem được hình to.
-8. **Công cụ của giáo viên:** "Tắt tiếng" từng bạn, xoá từng tin nhắn (✕ cạnh tin), "Tắt trò chuyện cả lớp", "Tự duyệt hình vẽ" (bỏ bước xem trước), xoá hình khỏi thư viện, "Mời ra". Hình của một bạn tự mất khi bạn rời lớp.
-9. Trong lớp: chạm vào sân để đi, bấm biểu cảm (chào, cười, nhảy, tim, sao, khóc, giận) hoặc một câu chọn sẵn, hoặc nhắn tin ở ô trò chuyện.
+8. **Video YouTube:** giáo viên dán đường dẫn YouTube vào mục "Video YouTube" trong bảng quản lý rồi bấm "Chiếu". Video phát **ngay trên bảng** cho cả lớp (trên máy tính khung video phủ khít lên bảng; trên điện thoại, hoặc khi camera quay lệch khỏi bảng, video thành cửa sổ nổi ở trên cùng, bấm ⛶ để phóng to). Giáo viên điều khiển bằng nút phát, tạm dừng, tua của YouTube; học sinh xem **theo giáo viên** (cùng vị trí, tự bắt kịp nếu lệch quá vài giây, bạn vào muộn nhận đúng vị trí hiện tại). Học sinh không có nút điều khiển video, chỉ tắt tiếng và phóng to cho riêng mình. Nếu trình duyệt chặn tự phát, học sinh thấy nút "Chạm để xem". Chọn một hình lên bảng thì video tự dừng, và ngược lại. Nhận các dạng: `youtube.com/watch?v=…`, `youtu.be/…`, `/shorts/…`, `/embed/…`, `/live/…`, có thể kèm `t=90` hoặc `t=1m30s`; máy chủ chỉ giữ mã video 11 ký tự, không nhúng địa chỉ tuỳ ý. Dùng tên miền riêng tư `youtube-nocookie.com`.
+9. **Công cụ của giáo viên:** "Tắt tiếng" từng bạn, xoá từng tin nhắn (✕ cạnh tin), "Tắt trò chuyện cả lớp", "Tự duyệt hình vẽ" (bỏ bước xem trước), xoá hình khỏi thư viện, "Mời ra". Hình của một bạn tự mất khi bạn rời lớp.
+10. Trong lớp: chạm vào sân để đi, bấm biểu cảm (chào, cười, nhảy, tim, sao, khóc, giận) hoặc một câu chọn sẵn, hoặc nhắn tin ở ô trò chuyện.
 
 ## Nhân vật đóng gói và tài khoản gán sẵn
 
@@ -77,6 +78,7 @@ Máy chủ tự nhận địa chỉ thật của người dùng từ tiêu đề
 
 ## Chưa có
 
+- Video YouTube cần máy học sinh vào được `youtube.com`; video bị chủ kênh tắt chế độ nhúng sẽ không phát và hiện thông báo. Video không được lưu lại: tắt lớp là hết.
 - Bộ lọc từ ngữ cho chat: hiện chỉ có tắt tiếng, xoá tin và tắt chat do giáo viên làm thủ công. Không có nhắn riêng giữa hai người. Chưa có nút báo cáo, trang quản lý nhiều lớp, lưu trữ lâu dài.
 - Tách nền bằng mô hình phân đoạn; hiện chỉ dựa trên màu giấy nên ảnh cần nền giấy sáng, tương đối đều màu.
 - Khối 3D được suy ra tự động từ hình phẳng (dày ở giữa, mỏng ở mép), mặt sau là hình mặt trước lật lại; chưa tách khớp đầu/thân/tay.

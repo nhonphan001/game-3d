@@ -171,3 +171,21 @@ button.mini { padding: 0 10px; box-shadow: none; font-size: 15px; }
   .net { top: calc(62px + env(safe-area-inset-top, 0px)); }
 }
 #keyBox { z-index: 70; }
+
+/* ===== Video YouTube trên bảng ===== */
+#room header, #room footer { z-index: 12; }
+.toast { z-index: 40; }
+form.inline { display: flex; flex-direction: row; gap: 6px; align-items: center; }
+form.inline input { flex: 1; min-width: 0; font-size: 16px; padding: 5px 10px; }
+form.inline button { padding: 3px 14px; box-shadow: 0 2px 0 #141d6e; }
+#videoStop { margin-top: 8px; width: 100%; }
+#videoDock { position: fixed; left: 0; top: 0; width: 320px; height: 180px; z-index: 10; background: #000; box-sizing: border-box; overflow: hidden; pointer-events: none; }
+#videoDock.teacher { pointer-events: auto; }
+#videoDock.float { border: 3px solid var(--ink); border-radius: 8px; box-shadow: 3px 4px 0 rgba(36, 52, 180, 0.3); }
+#videoDock iframe { width: 100%; height: 100%; display: block; border: 0; }
+#videoTools { position: absolute; right: 4px; bottom: 4px; display: flex; gap: 4px; pointer-events: auto; z-index: 2; }
+#videoDock.teacher #videoTools { display: none; }
+#videoTools button { padding: 0 8px; min-height: 30px; font-size: 16px; box-shadow: none; background: rgba(243, 238, 219, 0.92); }
+#videoMsg { position: absolute; inset: 0; margin: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; color: #fff; background: rgba(13, 20, 80, 0.88); font-size: 17px; z-index: 1; pointer-events: none; }
+#videoPlay { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3; pointer-events: auto; padding: 8px 18px; font-size: 20px; }
+#videoDock.big { left: 50% !important; top: 50% !important; transform: translate(-50%, -50%); width: min(96vw, 142vh) !important; height: auto !important; aspect-ratio: 16 / 9; z-index: 45; pointer-events: auto; border: 3px solid var(--ink); border-radius: 8px; box-shadow: 0 0 0 100vmax rgba(20, 28, 90, 0.65); }

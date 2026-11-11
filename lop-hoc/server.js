@@ -166,7 +166,7 @@ function loadClasses() {
       for (const r of d.roster || []) roster.set(r.nameKey, { ...r, img: readImg(d.code, r.imgKey), imgKey: r.imgKey || rid() });
       classes.set(d.code, { code: d.code, title: d.title || '', created: d.created, lastActive: d.lastActive || Date.now(), keySalt: d.keySalt, keyHash: d.keyHash, teacher,
         members: new Map(), pending: new Map(), roster, msgs: d.msgs || [], nextMsg: d.nextMsg || 1, chatOff: !!d.chatOff, autoArt: !!d.autoArt,
-        arts: new Map(), pendingArts: new Map(), board: null });
+        arts: new Map(), pendingArts: new Map(), board: null, video: null });
     } catch (e) { console.error(`Bỏ qua tệp lớp hỏng ${f}:`, e.message); }
   }
   console.log(`Đã nạp ${classes.size} lớp đã lưu.`);
@@ -181,6 +181,35 @@ function destroyClass(cls) { // xoá hẳn một lớp và mọi dữ liệu c�
   fs.rmSync(classFile(cls.code), { force: true });
   fs.rmSync(imgDir(cls.code), { recursive: true, force: true });
 }
+
+// ---------------------------------------------------------------- Video YouTube trên bảng
+// Chỉ nhận đường dẫn YouTube đúng dạng và chỉ giữ lại mã video 11 ký tự (+ giây bắt đầu): máy chủ và học sinh
+// không bao giờ nhận một địa chỉ tuỳ ý để nhúng.
+function parseStart(v) {
+  if (!v) return 0;
+  if (/^\d+$/.test(v)) return Math.min(Number(v), 86400);
+  const m = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/.exec(v);
+  return m ? Math.min((+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0), 86400) : 0;
+}
+function parseYouTube(input) {
+  if (typeof input !== 'string' || input.length > 300) return null;
+  const raw = input.trim();
+  let u;
+  try { u = new URL(raw.includes('://') ? raw : `https://${raw}`); } catch { return null; }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  const host = u.hostname.toLowerCase().replace(/^(www\.|m\.|music\.)/, '');
+  let id = null;
+  if (host === 'youtu.be') id = u.pathname.slice(1).split('/')[0];
+  else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+    const m = /^\/(?:embed|shorts|live|v)\/([^/?#]+)/.exec(u.pathname);
+    id = u.pathname === '/watch' ? u.searchParams.get('v') : (m ? m[1] : null);
+  }
+  if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return null;
+  return { id, start: parseStart(u.searchParams.get('t') || u.searchParams.get('start')) };
+}
+const videoPub = (cls) => (cls.video
+  ? { id: cls.video.id, state: cls.video.state, pos: cls.video.state === 'playing' ? cls.video.pos + (Date.now() - cls.video.at) / 1000 : cls.video.pos }
+  : null);
 
 const classes = new Map(); // mã lớp -> lớp (xem create); được lưu vào DATA_DIR/classes
 
@@ -230,7 +259,7 @@ function welcome(cls, me, extra = {}) {
   const t = cls.teacher;
   if (t.ws || !t.goneSent) members.push(pub(cls, t)); // giáo viên vắng quá lâu thì không hiện trong lớp
   const msg = { t: 'welcome', you: me.id, role: me.role, code: cls.code, title: cls.title, max: MAX_STUDENTS, members, resume: me.resume,
-    chat: cls.msgs, chatOff: cls.chatOff, board: boardPub(cls), ...extra };
+    chat: cls.msgs, chatOff: cls.chatOff, board: boardPub(cls), video: videoPub(cls), ...extra };
   if (me.role === 'teacher') {
     msg.pending = [...cls.pending.values()].map((m) => pub(cls, m));
     msg.arts = [...cls.arts.values()].map((a) => artPub(cls, a));
@@ -460,7 +489,7 @@ const handlers = {
     const keySalt = rid(8);
     const cls = { code: newCode(), title: cleanText(d.title).slice(0, 30), created: today(), lastActive: Date.now(), keySalt, keyHash: hashCode(key, keySalt),
       teacher, members: new Map(), pending: new Map(), roster: new Map(),
-      msgs: [], nextMsg: 1, chatOff: false, arts: new Map(), pendingArts: new Map(), board: null, autoArt: false };
+      msgs: [], nextMsg: 1, chatOff: false, arts: new Map(), pendingArts: new Map(), board: null, video: null, autoArt: false };
     classes.set(cls.code, cls);
     if (img) writeImg(cls.code, teacher.imgKey, img);
     saveClassNow(cls);
@@ -677,8 +706,30 @@ const handlers = {
     if (!isTeacher(ws)) return;
     const cls = ws.cls;
     if (d.art !== null && !cls.arts.has(d.art)) return;
+    if (d.art !== null && cls.video) { cls.video = null; broadcast(cls, { t: 'video', v: null }); } // bảng chỉ chiếu một thứ một lúc
     cls.board = d.art;
     broadcast(cls, { t: 'board', board: boardPub(cls) });
+  },
+  video(ws, d) { // giáo viên dán đường dẫn YouTube để chiếu lên bảng
+    if (!isTeacher(ws)) return;
+    const p = parseYouTube(d.url);
+    if (!p) return notice(ws, 'Đường dẫn chưa đúng. Hãy dán đường dẫn video YouTube (youtube.com hoặc youtu.be).');
+    const cls = ws.cls;
+    cls.video = { id: p.id, state: 'playing', pos: p.start, at: Date.now() };
+    if (cls.board) { cls.board = null; broadcast(cls, { t: 'board', board: null }); }
+    broadcast(cls, { t: 'video', v: videoPub(cls) });
+  },
+  videostate(ws, d) { // giáo viên bấm phát / dừng / tua: báo cho cả lớp theo kịp
+    if (!isTeacher(ws) || !ws.cls.video) return;
+    if (!['playing', 'paused'].includes(d.state) || !Number.isFinite(d.pos) || d.pos < 0 || d.pos > 86400) return;
+    const v = ws.cls.video;
+    v.state = d.state; v.pos = d.pos; v.at = Date.now();
+    broadcast(ws.cls, { t: 'video', v: videoPub(ws.cls) }, ws.me); // trừ chính giáo viên vừa báo
+  },
+  videostop(ws) {
+    if (!isTeacher(ws) || !ws.cls.video) return;
+    ws.cls.video = null;
+    broadcast(ws.cls, { t: 'video', v: null });
   },
   hold(ws, d) { // cầm lại / cất hình của mình
     const cls = ws.cls, me = ws.me;

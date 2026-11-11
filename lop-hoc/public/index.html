@@ -134,6 +134,13 @@
         <div id="artGallery"></div>
         <p id="noArts" class="note">Chưa có hình nào. Bấm vào một hình để chiếu lên bảng.</p>
         <button type="button" id="boardClear" hidden>Gỡ hình khỏi bảng</button>
+        <h2>Video YouTube</h2>
+        <form id="videoForm" class="inline" autocomplete="off">
+          <input id="videoUrl" type="text" inputmode="url" placeholder="Dán đường dẫn YouTube" aria-label="Đường dẫn YouTube" maxlength="300">
+          <button type="submit" class="primary">Chiếu</button>
+        </form>
+        <button type="button" id="videoStop" hidden>Dừng chiếu video</button>
+        <p class="note">Video chiếu lên bảng cho cả lớp và học sinh xem theo giáo viên. Dùng nút phát, tạm dừng, tua của YouTube để điều khiển.</p>
         <h2>Cài đặt lớp</h2>
         <label class="chk"><input type="checkbox" id="chatOffBox"> Tắt trò chuyện cả lớp</label>
         <label class="chk"><input type="checkbox" id="autoArtBox"> Tự duyệt hình vẽ (không xem trước)</label>
@@ -142,6 +149,14 @@
       </div>
     </aside>
     <p id="toast" class="toast" hidden></p>
+    <div id="videoDock" hidden aria-label="Video đang chiếu trên bảng">
+      <p id="videoMsg" hidden></p>
+      <button type="button" id="videoPlay" hidden>▶ Chạm để xem</button>
+      <div id="videoTools">
+        <button type="button" id="videoMute" aria-label="Bật hoặc tắt tiếng video">🔊</button>
+        <button type="button" id="videoBig" aria-label="Phóng to hoặc thu nhỏ video">⛶</button>
+      </div>
+    </div>
     <section id="chat" hidden aria-label="Trò chuyện trong lớp">
       <div class="sheethead"><b>Trò chuyện</b><button type="button" class="closex" data-close="chat" aria-label="Đóng">✕</button></div>
       <ul id="chatLog" aria-live="polite"></ul>
