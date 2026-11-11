@@ -208,8 +208,7 @@ const boardCv = document.createElement('canvas');
 boardCv.width = 1024; boardCv.height = 560;
 const boardTex = new THREE.CanvasTexture(boardCv);
 boardTex.colorSpace = THREE.SRGBColorSpace;
-const boardState = { img: null, url: null, caption: '', title: '', video: false };
-const VR = { x: 72, y: 32, w: 880, h: 495 }; // vùng 16:9 trên mặt bảng (toạ độ ảnh bảng 1024×560) mà khung video phủ lên
+const boardState = { img: null, url: null, caption: '', title: '' };
 function drawBoard(code) {
   const g = boardCv.getContext('2d'), W = 1024, H = 560;
   g.fillStyle = CARD; g.fillRect(0, 0, W, H);
@@ -217,11 +216,7 @@ function drawBoard(code) {
   for (let k = -H; k < W; k += 14) { g.beginPath(); g.moveTo(k, H); g.lineTo(k + H, 0); g.stroke(); }
   g.globalAlpha = 1; g.lineWidth = 12; g.strokeRect(8, 8, W - 16, H - 16);
   g.textAlign = 'center'; g.fillStyle = INK;
-  if (boardState.video) { // đang chiếu video: nền tối, khung video YouTube phủ lên đúng vùng này
-    g.fillStyle = '#0d1450'; g.fillRect(VR.x, VR.y, VR.w, VR.h);
-    g.fillStyle = CARD; g.beginPath(); g.moveTo(480, 210); g.lineTo(480, 350); g.lineTo(600, 280); g.closePath(); g.fill();
-    g.font = '44px "Patrick Hand", sans-serif'; g.fillText('Đang chiếu video…', W / 2, 420);
-  } else if (boardState.img) { // giáo viên đang chiếu một hình vẽ
+  if (boardState.img) { // giáo viên đang chiếu một hình vẽ
     const im = boardState.img, aw = W - 120, ah = H - 150, k = Math.min(aw / im.width, ah / im.height);
     const w = im.width * k, h = im.height * k, x = (W - w) / 2, y = 38 + (ah - h) / 2;
     g.fillStyle = '#fff'; g.fillRect(x - 8, y - 8, w + 16, h + 16);
@@ -249,7 +244,7 @@ function setBoard(b) { // b: { url, name } hoặc null
   im.src = b.url;
 }
 drawBoard('');
-document.fonts?.ready.then(() => drawBoard(session.code || ''));
+document.fonts?.ready.then(() => { drawBoard(session.code || ''); drawScreen(!!vid.cur); });
 const board = new THREE.Mesh(new THREE.PlaneGeometry(7.3, 4), new THREE.MeshBasicMaterial({ map: boardTex }));
 board.position.set(0, 2.6, -ROOM_R - 1.6);
 scene.add(board);
@@ -257,6 +252,44 @@ for (const x of [-3.45, 3.45]) {
   const leg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 0.1), new THREE.MeshBasicMaterial({ color: INK }));
   leg.position.set(x, 0.45, -ROOM_R - 1.6);
   scene.add(leg);
+}
+
+// Màn chiếu phim đặt cạnh bảng: video YouTube phủ lên đúng mặt màn này (xem placeDock)
+const SCREEN = { x: -7.4, y: 2.5, z: -ROOM_R - 1.6, w: 5.6, h: 3.15 };
+const VR = { x: 20, y: 12, w: 984, h: 552 }; // vùng 16:9 trên mặt màn (toạ độ ảnh 1024×576) mà khung video phủ lên
+const screenCv = document.createElement('canvas');
+screenCv.width = 1024; screenCv.height = 576;
+const screenTex = new THREE.CanvasTexture(screenCv);
+screenTex.colorSpace = THREE.SRGBColorSpace;
+function drawScreen(on) {
+  const g = screenCv.getContext('2d'), W = 1024, H = 576;
+  g.textAlign = 'center';
+  if (on) { // đang chiếu: nền tối, khung video YouTube phủ lên
+    g.fillStyle = '#0d1450'; g.fillRect(0, 0, W, H);
+    g.fillStyle = CARD; g.beginPath(); g.moveTo(450, 200); g.lineTo(450, 340); g.lineTo(580, 270); g.closePath(); g.fill();
+    g.font = '44px "Patrick Hand", sans-serif'; g.fillText('Đang chiếu video…', W / 2, 430);
+  } else { // màn tắt: tờ giấy trống có nét gạch như bảng
+    g.fillStyle = '#ebe5cf'; g.fillRect(0, 0, W, H);
+    g.strokeStyle = INK; g.globalAlpha = 0.18; g.lineWidth = 2;
+    for (let k = -H; k < W; k += 16) { g.beginPath(); g.moveTo(k, H); g.lineTo(k + H, 0); g.stroke(); }
+    g.globalAlpha = 1; g.fillStyle = INK;
+    g.font = '700 110px "Dancing Script", cursive'; g.fillText('Màn chiếu', W / 2, 290);
+    g.font = '44px "Patrick Hand", sans-serif'; g.fillText('Chưa chiếu video', W / 2, 370);
+  }
+  screenTex.needsUpdate = true;
+}
+drawScreen(false);
+const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(SCREEN.w, SCREEN.h), new THREE.MeshBasicMaterial({ map: screenTex }));
+screenMesh.position.set(SCREEN.x, SCREEN.y, SCREEN.z + 0.03);
+const frameMesh = new THREE.Mesh(new THREE.PlaneGeometry(SCREEN.w + 0.3, SCREEN.h + 0.3), new THREE.MeshBasicMaterial({ color: INK }));
+frameMesh.position.set(SCREEN.x, SCREEN.y, SCREEN.z);
+const roller = new THREE.Mesh(new THREE.BoxGeometry(SCREEN.w + 0.6, 0.16, 0.16), new THREE.MeshBasicMaterial({ color: INK }));
+roller.position.set(SCREEN.x, SCREEN.y + SCREEN.h / 2 + 0.22, SCREEN.z);
+scene.add(frameMesh, screenMesh, roller);
+for (const dx of [-SCREEN.w / 2 - 0.1, SCREEN.w / 2 + 0.1]) {
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, SCREEN.y + SCREEN.h / 2 + 0.22, 0.1), new THREE.MeshBasicMaterial({ color: INK }));
+  post.position.set(SCREEN.x + dx, (SCREEN.y + SCREEN.h / 2 + 0.22) / 2, SCREEN.z);
+  scene.add(post);
 }
 
 const shadowTex = inkCanvas(128, 128, (g) => {
@@ -780,6 +813,7 @@ function refreshLists() {
   $('noArts').hidden = arts.length > 0;
   $('boardClear').hidden = !onBoard;
   $('videoStop').hidden = !vid.cur;
+  $('videoLookT').hidden = !vid.cur;
   $('chatOffBox').checked = chat.off;
   $('autoArtBox').checked = session.autoArt;
 }
@@ -986,13 +1020,14 @@ function applyVideo(v) { // v: { id, state, pos } hoặc null
   vid.cur = { id: v.id, state: v.state, pos: v.pos, at: performance.now() };
   yt.t0 = performance.now();
   showVideoMsg('');
-  boardState.video = true; drawBoard(session.code || '');
+  drawScreen(true);
   $('videoDock').hidden = false;
   $('videoDock').classList.toggle('teacher', session.role === 'teacher');
   if (yt.player && yt.ready) {
     if (!prev || prev.id !== v.id) yt.player.loadVideoById({ videoId: v.id, startSeconds: v.pos });
     reconcile(true);
   } else ensurePlayer();
+  if ((!prev || prev.id !== v.id) && !screenVisible(16)) focusScreen(); // video mới mà màn chiếu đang khuất: quay camera sang xem
 }
 function teardownVideo() {
   try { yt.player?.destroy(); } catch { /* đã gỡ */ }
@@ -1000,7 +1035,8 @@ function teardownVideo() {
   document.getElementById('ytHost')?.remove();
   $('videoDock').hidden = true; $('videoDock').classList.remove('big', 'float');
   showVideoMsg(''); $('videoPlay').hidden = true;
-  boardState.video = false; drawBoard(session.code || '');
+  drawScreen(false);
+  if (cam.mode === 'screen') followAvatar();
 }
 function videoTick() { // mỗi giây: giáo viên báo, học sinh chỉnh theo; cập nhật nút tiếng và nút "chạm để xem"
   if (!vid.cur || !yt.ready) return;
@@ -1012,31 +1048,66 @@ function videoTick() { // mỗi giây: giáo viên báo, học sinh chỉnh theo
   }
 }
 setInterval(videoTick, 1000);
-function placeDock() { // đặt khung video phủ lên bảng; không nhìn thẳng vào bảng thì thu thành cửa sổ góc
+const cam = { mode: 'follow', t: 0 }; // 'follow': bám theo nhân vật; 'screen': nhìn vào màn chiếu
+const screenCorner = (x, y) => { // góc của vùng video trên màn chiếu, đổi ra toạ độ màn hình
+  _v.set((x / 1024 - 0.5) * SCREEN.w, (0.5 - y / 576) * SCREEN.h, 0);
+  screenMesh.localToWorld(_v); _v.project(camera);
+  return { x: (_v.x * 0.5 + 0.5) * canvas.clientWidth, y: (-_v.y * 0.5 + 0.5) * canvas.clientHeight, z: _v.z };
+};
+function screenQuad() { // vùng video trên màn hình: { L, T, w, h } nếu màn chiếu nhìn thấy rõ, không thì null
+  camera.updateMatrixWorld(); screenMesh.updateWorldMatrix(true, false);
+  const tl = screenCorner(VR.x, VR.y), tr = screenCorner(VR.x + VR.w, VR.y), bl = screenCorner(VR.x, VR.y + VR.h), br = screenCorner(VR.x + VR.w, VR.y + VR.h);
+  if (![tl, tr, bl, br].every((p) => p.z < 1)) return null;
+  if (_c.copy(camera.position).sub(screenMesh.position).normalize().z < 0.45) return null; // đứng lệch quá, không nhìn thẳng vào màn
+  let L = Math.max(tl.x, bl.x), T = Math.max(tl.y, tr.y), w = Math.min(tr.x, br.x) - L, h = Math.min(bl.y, br.y) - T;
+  if (w / h > 16 / 9) { const nw = (h * 16) / 9; L += (w - nw) / 2; w = nw; } else { const nh = (w * 9) / 16; T += (h - nh) / 2; h = nh; }
+  return w > 100 && h > 56 ? { L, T, w, h } : null;
+}
+function screenVisible(margin) { // cả màn chiếu nằm gọn trong màn hình (trừ lề)?
+  const q = screenQuad(), cw = canvas.clientWidth, ch = canvas.clientHeight;
+  return !!q && q.L >= margin && q.T >= margin && q.L + q.w <= cw - margin && q.T + q.h <= ch - margin;
+}
+function focusScreen() { // quay camera sang nhìn thẳng vào màn chiếu, đủ gần để video lớn
+  cam.mode = 'screen'; cam.t = 1.3;
+  if (!wide()) for (const k of Object.keys(panels)) applyPanel(k, false); // điện thoại: đóng các bảng đang che
+}
+function followAvatar() { // về chỗ nhân vật
+  cam.mode = 'follow';
+  const me = avatars.get(session.me);
+  if (me) { camera.position.set(me.pos.x, 4.2, Math.max(me.pos.z + 9, 9.5)); controls.target.set(me.pos.x, 0.9, me.pos.z); }
+}
+const toggleLook = () => { if (cam.mode === 'screen') followAvatar(); else focusScreen(); };
+function stepCamera(dt) { // chuyển camera mượt sang màn chiếu trong khoảng 1,3 giây, sau đó để người dùng tự xoay
+  if (cam.t <= 0) return;
+  cam.t -= dt;
+  const vf = (camera.fov * Math.PI) / 360, tanV = Math.tan(vf);
+  const d = THREE.MathUtils.clamp(Math.max((SCREEN.w * 1.2) / 2 / (tanV * camera.aspect), (SCREEN.h * 1.6) / 2 / tanV), 5, 16);
+  const k = 1 - Math.exp(-dt * 4);
+  controls.target.lerp(_v.set(SCREEN.x, SCREEN.y, SCREEN.z), k);
+  camera.position.lerp(_c.set(SCREEN.x, SCREEN.y + 0.4, SCREEN.z + d), k);
+}
+function placeDock() { // đặt khung video phủ lên màn chiếu; màn khuất khỏi tầm nhìn thì thu thành ô xem nhanh ở góc
   const el = $('videoDock');
   if (el.hidden || el.classList.contains('big')) return;
-  const cw = canvas.clientWidth, ch = canvas.clientHeight;
-  board.updateWorldMatrix(true, false);
-  const P = (x, y) => { _v.set((x / 1024 - 0.5) * 7.3, (0.5 - y / 560) * 4, 0); board.localToWorld(_v); _v.project(camera); return { x: (_v.x * 0.5 + 0.5) * cw, y: (-_v.y * 0.5 + 0.5) * ch, z: _v.z }; };
-  const tl = P(VR.x, VR.y), tr = P(VR.x + VR.w, VR.y), bl = P(VR.x, VR.y + VR.h), br = P(VR.x + VR.w, VR.y + VR.h);
-  const facing = _c.copy(camera.position).sub(board.position).normalize().z > 0.55;
-  let L = Math.max(tl.x, bl.x), T = Math.max(tl.y, tr.y), w = Math.min(tr.x, br.x) - L, h = Math.min(bl.y, br.y) - T;
-  let docked = cw >= 700 && facing && [tl, tr, bl, br].every((p) => p.z < 1) && w > 140 && h > 80; // điện thoại: bảng quá nhỏ, luôn dùng cửa sổ nổi rộng gần hết chiều ngang
-  if (docked) { // khung 16:9 lớn nhất nằm gọn trong hình thang của bảng
-    if (w / h > 16 / 9) { const nw = (h * 16) / 9; L += (w - nw) / 2; w = nw; } else { const nh = (w * 9) / 16; T += (h - nh) / 2; h = nh; }
-    const m = yt.docked ? -4 : 16; // có độ trễ để khung không nhấp nháy giữa hai chế độ
-    docked = L >= m && T >= m && L + w <= cw - m && T + h <= ch - m; // bảng bị cắt khỏi màn hình thì dùng cửa sổ nổi
-  }
+  const cw = canvas.clientWidth, ch = canvas.clientHeight, q = screenQuad();
+  const m = yt.docked ? -4 : 16; // có độ trễ để khung không nhấp nháy giữa hai chế độ
+  const docked = !!q && q.L >= m && q.T >= m && q.L + q.w <= cw - m && q.T + q.h <= ch - m;
   yt.docked = docked;
-  if (!docked) { // cửa sổ nổi dưới thanh công cụ: điện thoại thì rộng gần hết chiều ngang
-    w = cw < 700 ? cw - 16 : Math.min(360, cw * 0.4); h = (w * 9) / 16; L = cw < 700 ? 8 : cw - w - 8; T = 66;
-  }
+  let { L, T, w, h } = docked ? q : {};
+  if (!docked) { w = cw < 700 ? 176 : 224; h = (w * 9) / 16; L = cw - w - 8; T = 66; } // ô xem nhanh: chạm vào để quay sang màn chiếu
   const key = [L, T, w, h, docked].map((n) => (typeof n === 'number' ? Math.round(n) : n)).join();
   if (key === yt.last) return;
   yt.last = key;
   el.classList.toggle('float', !docked);
   el.style.left = `${Math.round(L)}px`; el.style.top = `${Math.round(T)}px`; el.style.width = `${Math.round(w)}px`; el.style.height = `${Math.round(h)}px`;
 }
+$('videoShield').onclick = () => { // học sinh chạm vào video: phóng to, hoặc quay sang màn chiếu nếu đang là ô nhỏ (không bao giờ tới trình phát)
+  const el = $('videoDock');
+  if (el.classList.contains('big')) return;
+  if (yt.docked) { el.classList.add('big'); yt.last = ''; } else focusScreen();
+};
+$('videoLook').onclick = toggleLook;
+$('videoLookT').onclick = toggleLook;
 $('videoMute').onclick = () => { const p = yt.player; if (!p?.isMuted) return; if (p.isMuted()) p.unMute(); else p.mute(); videoTick(); };
 $('videoBig').onclick = () => { $('videoDock').classList.toggle('big'); yt.last = ''; };
 $('videoPlay').onclick = () => { yt.player?.unMute?.(); yt.player?.playVideo?.(); $('videoPlay').hidden = true; };
@@ -1178,6 +1249,7 @@ canvas.addEventListener('pointerup', (e) => {
   if (boardState.img && ray.intersectObject(board).length) { openLightbox(boardState.url, boardState.caption); return; } // bấm vào bảng: xem hình to
   if (!ray.ray.intersectPlane(floor, tmp)) return;
   if (tmp.length() > ROOM_R) tmp.setLength(ROOM_R);
+  if (cam.mode === 'screen') followAvatar(); // bấm sàn để đi thì camera về bám theo nhân vật
   me.target.set(tmp.x, 0, tmp.z);
   sendMsg({ t: 'go', x: tmp.x, z: tmp.z });
 });
@@ -1227,12 +1299,12 @@ renderer.setAnimationLoop(() => {
   const me = avatars.get(session.me);
   if (me) prev.copy(me.pos);
   for (const a of avatars.values()) a.update(dt, t);
-  if (me) { // camera đi theo nhân vật của mình
+  if (me && cam.mode === 'follow') { // camera đi theo nhân vật của mình
     camera.position.add(tmp.copy(me.pos).sub(prev));
     controls.target.set(me.pos.x, 0.9, me.pos.z);
-  }
+  } else if (cam.mode === 'screen') stepCamera(dt);
   controls.update();
   placeDock();
   renderer.render(scene, camera);
 });
-window.lhnv = { session, avatars, boardState, chat, store, setPanel, forceReconnect, vid, yt, camera }; // tiện kiểm thử
+window.lhnv = { session, avatars, boardState, chat, store, setPanel, forceReconnect, vid, yt, camera, cam, screenMesh }; // tiện kiểm thử

@@ -706,7 +706,6 @@ const handlers = {
     if (!isTeacher(ws)) return;
     const cls = ws.cls;
     if (d.art !== null && !cls.arts.has(d.art)) return;
-    if (d.art !== null && cls.video) { cls.video = null; broadcast(cls, { t: 'video', v: null }); } // bảng chỉ chiếu một thứ một lúc
     cls.board = d.art;
     broadcast(cls, { t: 'board', board: boardPub(cls) });
   },
@@ -716,7 +715,6 @@ const handlers = {
     if (!p) return notice(ws, 'Đường dẫn chưa đúng. Hãy dán đường dẫn video YouTube (youtube.com hoặc youtu.be).');
     const cls = ws.cls;
     cls.video = { id: p.id, state: 'playing', pos: p.start, at: Date.now() };
-    if (cls.board) { cls.board = null; broadcast(cls, { t: 'board', board: null }); }
     broadcast(cls, { t: 'video', v: videoPub(cls) });
   },
   videostate(ws, d) { // giáo viên bấm phát / dừng / tua: báo cho cả lớp theo kịp

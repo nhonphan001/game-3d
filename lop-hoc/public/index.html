@@ -139,8 +139,9 @@
           <input id="videoUrl" type="text" inputmode="url" placeholder="Dán đường dẫn YouTube" aria-label="Đường dẫn YouTube" maxlength="300">
           <button type="submit" class="primary">Chiếu</button>
         </form>
+        <button type="button" id="videoLookT" hidden>🎥 Nhìn màn chiếu</button>
         <button type="button" id="videoStop" hidden>Dừng chiếu video</button>
-        <p class="note">Video chiếu lên bảng cho cả lớp và học sinh xem theo giáo viên. Dùng nút phát, tạm dừng, tua của YouTube để điều khiển.</p>
+        <p class="note">Video chiếu trên màn chiếu cạnh bảng cho cả lớp, học sinh xem theo giáo viên. Dùng nút phát, tạm dừng, tua của YouTube để điều khiển.</p>
         <h2>Cài đặt lớp</h2>
         <label class="chk"><input type="checkbox" id="chatOffBox"> Tắt trò chuyện cả lớp</label>
         <label class="chk"><input type="checkbox" id="autoArtBox"> Tự duyệt hình vẽ (không xem trước)</label>
@@ -154,6 +155,7 @@
       <div id="videoShield"></div>
       <button type="button" id="videoPlay" hidden>▶ Chạm để xem</button>
       <div id="videoTools">
+        <button type="button" id="videoLook" aria-label="Nhìn màn chiếu hoặc quay về nhân vật">🎥</button>
         <button type="button" id="videoMute" aria-label="Bật hoặc tắt tiếng video">🔊</button>
         <button type="button" id="videoBig" aria-label="Phóng to hoặc thu nhỏ video">⛶</button>
       </div>

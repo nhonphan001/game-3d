@@ -193,3 +193,8 @@ form.inline button { padding: 3px 14px; box-shadow: 0 2px 0 #141d6e; }
 #videoShield { position: absolute; inset: 0; z-index: 1; }
 #videoDock.teacher #videoShield { display: none; }
 #videoDock.big #videoShield { pointer-events: auto; }
+
+/* Màn chiếu phim cạnh bảng: học sinh chạm vào video để phóng to, không bao giờ chạm tới trình phát */
+#videoShield { pointer-events: auto; cursor: pointer; }
+#videoDock.big #videoShield { cursor: default; }
+#videoLookT { margin-top: 8px; width: 100%; }
