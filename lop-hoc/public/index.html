@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Lớp Học Nét Vẽ</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three.module.min.js", "three/addons/": "/vendor/" } }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div class="binding"></div>
+
+  <!-- Màn hình vào lớp -->
+  <main id="home" class="sheet">
+    <h1>Lớp Học Nét Vẽ</h1>
+    <p class="lead">Vẽ nhân vật trên giấy, chụp ảnh, rồi cho nhân vật vào lớp gặp các bạn.</p>
+    <div class="tabs" role="tablist">
+      <button type="button" id="tabStudent" class="active" role="tab">Học sinh</button>
+      <button type="button" id="tabTeacher" role="tab">Giáo viên</button>
+    </div>
+    <form id="joinForm" autocomplete="off">
+      <label id="codeRow">Mã lớp
+        <input id="code" type="text" maxlength="6" placeholder="VD: K7M2QX" autocapitalize="characters" spellcheck="false">
+      </label>
+      <label><span id="nameLabel">Tên của em</span>
+        <input id="name" type="text" maxlength="20" placeholder="Biệt danh, không cần họ tên thật">
+      </label>
+      <div class="pick">
+        <label class="filebtn"><span id="fileLabel">📷 Chọn ảnh nhân vật</span>
+          <input id="file" type="file" accept="image/*">
+        </label>
+        <div id="previewBox" hidden>
+          <canvas id="preview" width="200" height="200"></canvas>
+          <label class="range">Tách nền
+            <input id="thr" type="range" min="15" max="110" value="45">
+          </label>
+        </div>
+      </div>
+      <p id="teacherNote" class="note" hidden>Ảnh là tuỳ chọn. Sau khi tạo lớp, cô/thầy đọc mã lớp cho học sinh và duyệt từng bạn.</p>
+      <p class="note">Ảnh gốc không rời khỏi máy: chỉ hình nhân vật đã tách nền được gửi đi, và bị xoá khi rời lớp.</p>
+      <p id="err" class="err" role="alert"></p>
+      <button id="submit" type="submit" class="primary">Xin vào lớp</button>
+    </form>
+  </main>
+
+  <!-- Chờ duyệt -->
+  <main id="wait" class="sheet" hidden>
+    <h1>Đang chờ duyệt…</h1>
+    <canvas id="waitImg" width="200" height="200"></canvas>
+    <p class="lead" id="waitText">Cô giáo sẽ xem hình của em rồi cho vào lớp.</p>
+    <button type="button" id="cancelWait">Thôi, quay lại</button>
+  </main>
+
+  <!-- Trong lớp -->
+  <div id="room" hidden>
+    <header>
+      <div class="chip">Mã lớp <b id="roomCode"></b> · <span id="count"></span></div>
+      <button type="button" id="leave">Rời lớp</button>
+    </header>
+    <aside id="teacherPanel" hidden>
+      <h2>Chờ duyệt <span id="pendingCount"></span></h2>
+      <ul id="pendingList"></ul>
+      <p id="noPending" class="note">Chưa có bạn nào xin vào. Hãy đọc mã lớp cho học sinh.</p>
+      <h2>Trong lớp</h2>
+      <ul id="memberList"></ul>
+    </aside>
+    <p id="toast" class="toast" hidden></p>
+    <footer>
+      <div class="actions" id="emotes">
+        <button type="button" data-e="wave"><i>👋</i>Chào</button>
+        <button type="button" data-e="laugh"><i>😆</i>Cười</button>
+        <button type="button" data-e="jump"><i>🤸</i>Nhảy</button>
+        <button type="button" data-e="heart"><i>❤️</i>Tim</button>
+        <button type="button" data-e="star"><i>⭐</i>Sao</button>
+        <button type="button" data-e="cry"><i>😭</i>Khóc</button>
+        <button type="button" data-e="angry"><i>😡</i>Giận</button>
+      </div>
+      <div class="phrases" id="phrases"></div>
+      <p class="hint">Chạm vào sân để đi tới đó · kéo để xoay góc nhìn</p>
+    </footer>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

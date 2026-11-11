@@ -1,0 +1,119 @@
+@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Patrick+Hand&display=swap');
+:root {
+  --ink: #2434b4;
+  --paper: #f3eedb;
+  --blue: #2434b4;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper); }
+body {
+  font-family: "Patrick Hand", "Comic Sans MS", "Segoe Print", system-ui, sans-serif;
+  color: var(--ink);
+  user-select: none;
+  -webkit-user-select: none;
+}
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+header {
+  position: fixed; top: 0; left: 26px; padding: 14px 16px;
+  padding-top: max(12px, env(safe-area-inset-top));
+  pointer-events: none;
+}
+h1 {
+  margin: 0; font-family: "Dancing Script", "Segoe Script", cursive; font-weight: 700;
+  font-size: clamp(30px, 5vw, 46px); line-height: 1; transform: rotate(-3deg); transform-origin: left;
+  padding-bottom: 6px; border-bottom: 2.5px solid var(--ink); border-radius: 0 0 60% 40% / 0 0 10px 6px;
+  display: inline-block;
+}
+.hint { margin: 8px 0 0; font-size: 15px; opacity: 0.8; max-width: 60vw; }
+.hint.touch { display: none; }
+
+.colors {
+  position: fixed; top: 12px; right: 12px; display: flex; gap: 10px; align-items: center;
+  top: max(12px, env(safe-area-inset-top));
+  padding: 2px; font-size: 16px;
+}
+.colors label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.colors input[type=color] { width: 26px; height: 26px; padding: 0; border: 2px solid var(--ink); border-radius: 50%; background: none; cursor: pointer; overflow: hidden; }
+.colors input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+.colors input[type=color]::-webkit-color-swatch { border: none; }
+.colors input[type=checkbox] { accent-color: var(--ink); width: 16px; height: 16px; }
+
+#bubble {
+  position: fixed; left: 50%; top: 20%; transform: translate(-50%, -100%) scale(0.6);
+  max-width: min(70vw, 320px); padding: 9px 15px;
+  background: var(--paper); border: 2.5px solid var(--ink); border-radius: 255px 22px 225px 22px / 22px 225px 22px 255px;
+  font-size: 19px; text-align: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.18s, transform 0.18s;
+  box-shadow: 3px 4px 0 rgba(28, 42, 128, 0.25);
+}
+#bubble.show { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+#bubble::after {
+  content: ""; position: absolute; left: 50%; bottom: -11px; width: 16px; height: 16px;
+  background: var(--paper); border-right: 2.5px solid var(--ink); border-bottom: 2.5px solid var(--ink);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+footer {
+  position: fixed; left: 50%; bottom: 0; transform: translateX(-50%);
+  width: min(100%, 760px); padding: 10px 12px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 8px;
+}
+.actions { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
+button {
+  font: inherit; color: var(--ink); cursor: pointer;
+  background: rgba(243, 238, 219, 0.92); border: 2px solid var(--ink); border-radius: 255px 18px 225px 18px / 18px 225px 18px 255px;
+  box-shadow: 0 3px 0 var(--ink); transition: transform 0.08s, box-shadow 0.08s, background 0.15s;
+}
+.actions button { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px 5px; font-size: 15px; white-space: nowrap; }
+.actions button i { font-style: normal; font-size: 22px; line-height: 1.15; }
+button:active { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); }
+button.active { background: var(--blue); color: var(--paper); }
+button:focus-visible, input:focus-visible { outline: 3px solid #ffb400; outline-offset: 2px; }
+
+#sayForm { display: flex; gap: 6px; }
+#sayText {
+  flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--ink);
+  padding: 9px 14px; border: 2px solid var(--ink); border-radius: 255px 18px 225px 18px / 18px 225px 18px 255px; background: rgba(243, 238, 219, 0.92);
+  user-select: text; -webkit-user-select: text;
+}
+#sayForm button { padding: 0 20px; background: var(--ink); color: var(--paper); box-shadow: 0 3px 0 #141d6e; font-size: 18px; }
+.modes { display: flex; gap: 6px; }
+.modes button { padding: 5px 10px; font-size: 15px; white-space: nowrap; }
+.pick { display: none !important; }
+.color-mode .pick { display: flex !important; }
+
+#stick {
+  display: none; position: fixed; left: 18px; bottom: 190px; width: 104px; height: 104px;
+  border-radius: 50%; background: rgba(255, 255, 255, 0.55); border: 2px dashed var(--ink); touch-action: none;
+}
+#knob {
+  position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px;
+  border-radius: 50%; background: var(--blue); border: 2px solid var(--ink); pointer-events: none;
+}
+
+@media (pointer: coarse) {
+  #stick { display: block; }
+  .hint.desktop { display: none; }
+  .hint.touch { display: block; }
+}
+@media (max-width: 640px) {
+  .actions { grid-template-columns: repeat(5, 1fr); }
+  .hint { max-width: 55vw; font-size: 12px; }
+  .colors { flex-direction: column; align-items: flex-end; gap: 6px; }
+  .modes { flex-direction: column; align-items: stretch; }
+  .modes button { padding: 3px 8px; font-size: 14px; }
+}
+
+/* Gáy lò xo của cuốn sổ */
+.binding {
+  position: fixed; left: 0; top: 0; bottom: 0; width: 26px; pointer-events: none;
+  background:
+    radial-gradient(circle at 17px 50%, #cfc9b4 0 5px, transparent 6px) 0 0 / 26px 34px repeat-y,
+    linear-gradient(#fff, #fff) 0 0 / 0 0 no-repeat;
+}
+.binding::after {
+  content: ""; position: absolute; inset: 0 auto 0 -8px; width: 28px;
+  background: radial-gradient(ellipse 13px 6px at 50% 50%, transparent 0 60%, #fff 62% 80%, #b9b4a2 82% 92%, transparent 94%) 0 0 / 28px 34px repeat-y;
+}

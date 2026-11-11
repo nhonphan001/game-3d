@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Queen of White 3D</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/" } }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <header>
+    <h1>Queen of white</h1>
+    <p class="hint desktop">WASD / ← ↑ ↓ → để đi · Shift để chạy · Space để nhảy · kéo chuột để xoay góc nhìn</p>
+    <p class="hint touch">Dùng cần điều khiển để đi, đẩy hết cỡ để chạy · vuốt màn hình để xoay</p>
+  </header>
+
+  <div class="binding"></div>
+  <div class="colors">
+    <div class="modes">
+      <button type="button" data-mode="doll">✏️ Nét vẽ gốc</button>
+      <button type="button" data-mode="sketch">🖊️ 3D bút bi</button>
+      <button type="button" data-mode="color">🎨 3D tô màu</button>
+    </div>
+    <label class="pick" title="Màu tóc">Tóc <input type="color" id="hairColor" value="#e1e8f5"></label>
+    <label class="pick" title="Màu váy">Váy <input type="color" id="dressColor" value="#ffffff"></label>
+    <label title="Bật giọng đọc"><input type="checkbox" id="sound" checked> Tiếng</label>
+  </div>
+
+  <div id="bubble"></div>
+
+  <div id="stick"><div id="knob"></div></div>
+
+  <footer>
+    <div class="actions">
+      <button data-action="idle"><i>🧍‍♀️</i>Đứng</button>
+      <button data-action="walk"><i>🚶‍♀️</i>Đi</button>
+      <button data-action="run"><i>🏃‍♀️</i>Chạy</button>
+      <button data-action="jump"><i>🤸‍♀️</i>Nhảy</button>
+      <button data-action="talk"><i>💬</i>Nói</button>
+      <button data-action="laugh"><i>😆</i>Cười</button>
+      <button data-action="wave"><i>👋</i>Chào</button>
+      <button data-action="cry"><i>😭</i>Khóc</button>
+      <button data-action="blink"><i>😉</i>Chớp mắt</button>
+      <button data-action="angry"><i>😡</i>Giận dữ</button>
+    </div>
+    <form id="sayForm">
+      <input id="sayText" type="text" maxlength="80" placeholder="Nhập câu muốn nhân vật nói…" autocomplete="off">
+      <button type="submit">Nói</button>
+    </form>
+  </footer>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

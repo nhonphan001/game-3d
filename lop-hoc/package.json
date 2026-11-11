@@ -1,0 +1,10 @@
+{
+  "name": "lop-hoc-net-ve",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lớp Học Nét Vẽ: lớp học ảo nơi nhân vật vẽ tay của học sinh gặp nhau",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "ws": "^8.18.0" }
+}
