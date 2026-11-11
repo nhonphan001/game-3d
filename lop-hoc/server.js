@@ -21,7 +21,13 @@ const MAX_PER_IP = 100;              // một trường có thể chung một đ
 const MAX_SOCKETS = 3000;
 const EMOTES = ['wave', 'laugh', 'cry', 'angry', 'jump', 'heart', 'star'];
 const STYLES = ['flat', 'sketch', 'color']; // nét vẽ / 3D / 3D tô màu
-const PHRASES = 8;                   // số câu chọn sẵn (nội dung nằm ở trình duyệt)
+const PHRASES = 8;
+const CHAT_MAX = 120;                // độ dài một tin nhắn
+const CHAT_KEEP = 50;                // số tin giữ lại cho người vào sau
+const MAX_ART = 400 * 1024;          // hình vẽ gửi lên (PNG hoặc JPEG), đã thu nhỏ ở trình duyệt
+const ARTS_PER_MEMBER = 2;           // mỗi người giữ tối đa 2 hình trong lớp, hình mới đẩy hình cũ nhất ra
+const ART_BUDGET = 300 * 1024 * 1024; // tổng bộ nhớ dành cho hình vẽ của mọi lớp
+const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);                   // số câu chọn sẵn (nội dung nằm ở trình duyệt)
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 // ---------------------------------------------------------------- Nhân vật đóng gói + tài khoản được gán sẵn
@@ -90,6 +96,23 @@ function clientIp(req) {
   return viaCf && typeof real === 'string' && net.isIP(real) ? real : peer;
 }
 
+const cleanText = (v) => (typeof v === 'string'
+  ? v.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '').replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX) : '');
+function parseArt(v) {
+  if (typeof v !== 'string') return null;
+  const m = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(v);
+  if (!m) return null;
+  const buf = Buffer.from(m[2], 'base64');
+  const magic = m[1] === 'png' ? PNG_MAGIC : JPEG_MAGIC;
+  if (buf.length < 100 || buf.length > MAX_ART || !buf.subarray(0, magic.length).equals(magic)) return null;
+  return { buf, type: `image/${m[1]}` };
+}
+const artBytes = () => { let n = 0; for (const c of classes.values()) { for (const a of c.arts.values()) n += a.buf.length; for (const a of c.pendingArts.values()) n += a.buf.length; } return n; };
+const artPub = (cls, a) => ({ id: a.id, owner: a.owner, name: a.name, url: `/art/${cls.code}/${a.key}` });
+const findPerson = (cls, id) => (cls.teacher.id === id ? cls.teacher : cls.members.get(id));
+const notice = (ws, msg) => send(ws, { t: 'notice', msg });
+const everyone = (cls) => [cls.teacher, ...cls.members.values()];
+
 const classes = new Map(); // mã lớp -> { code, token, teacher, members: Map, pending: Map, emptySince }
 
 const rid = (n = 8) => crypto.randomBytes(n).toString('hex');
@@ -119,7 +142,9 @@ const clampPos = (x, z) => {
   return d > ROOM_R ? { x: (x / d) * ROOM_R, z: (z / d) * ROOM_R } : { x, z };
 };
 const lookOf = (d) => ({ style: STYLES.includes(d.style) ? d.style : 'flat', seed: Number.isInteger(d.seed) ? ((d.seed % 100) + 100) % 100 : 0 });
-const pub = (cls, m) => ({ id: m.id, name: m.name, role: m.role, style: m.style, seed: m.seed, char: m.char || null, img: m.img ? `/img/${cls.code}/${m.imgKey}.png` : null, x: m.x, z: m.z });
+const heldUrl = (cls, m) => { const a = m.held && cls.arts.get(m.held); return a ? `/art/${cls.code}/${a.key}` : null; };
+const boardPub = (cls) => { const a = cls.board && cls.arts.get(cls.board); return a ? artPub(cls, a) : null; };
+const pub = (cls, m) => ({ id: m.id, name: m.name, role: m.role, style: m.style, seed: m.seed, char: m.char || null, muted: !!m.muted, held: heldUrl(cls, m), img: m.img ? `/img/${cls.code}/${m.imgKey}.png` : null, x: m.x, z: m.z });
 const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); };
 function broadcast(cls, msg, except) {
   for (const m of cls.members.values()) if (m !== except) send(m.ws, msg);
@@ -134,8 +159,14 @@ function nameTaken(cls, name) {
 function welcome(cls, me) {
   const members = [...cls.members.values()].map((m) => pub(cls, m));
   if (cls.teacher.ws) members.push(pub(cls, cls.teacher));
-  const msg = { t: 'welcome', you: me.id, role: me.role, code: cls.code, max: MAX_STUDENTS, members };
-  if (me.role === 'teacher') { msg.token = cls.token; msg.pending = [...cls.pending.values()].map((m) => pub(cls, m)); }
+  const msg = { t: 'welcome', you: me.id, role: me.role, code: cls.code, max: MAX_STUDENTS, members,
+    chat: cls.msgs, chatOff: cls.chatOff, board: boardPub(cls) };
+  if (me.role === 'teacher') {
+    msg.token = cls.token; msg.pending = [...cls.pending.values()].map((m) => pub(cls, m));
+    msg.arts = [...cls.arts.values()].map((a) => artPub(cls, a));
+    msg.pendingArts = [...cls.pendingArts.values()].map((a) => artPub(cls, a));
+    msg.autoArt = cls.autoArt;
+  }
   send(me.ws, msg);
 }
 function touchEmpty(cls) {
@@ -212,12 +243,20 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' }).end(m.img);
     return;
   }
+  const art = /^\/art\/([A-Z0-9]{6})\/([0-9a-f]{16})$/.exec(p);
+  if (art) {
+    const cls = classes.get(art[1]);
+    const a = cls && [...cls.arts.values(), ...cls.pendingArts.values()].find((x) => x.key === art[2]);
+    if (!a) { res.writeHead(404).end(); return; }
+    res.writeHead(200, { 'Content-Type': a.type, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'" }).end(a.buf);
+    return;
+  }
   if (p.startsWith('/vendor/')) return serveFile(res, VENDOR, p.slice(8));
   serveFile(res, PUBLIC, p === '/' ? 'index.html' : p.slice(1));
 });
 
 // ---------------------------------------------------------------- WebSocket
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 640 * 1024 });
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 760 * 1024 });
 const fail = (ws, msg) => send(ws, { t: 'error', msg });
 
 function admit(cls, m) { // cho một học sinh vào lớp
@@ -227,6 +266,34 @@ function admit(cls, m) { // cho một học sinh vào lớp
   broadcast(cls, { t: 'joined', m: pub(cls, m) }, m);
   welcome(cls, m);
 }
+
+function removeArt(cls, id) {
+  const a = cls.arts.get(id);
+  if (!a) return;
+  cls.arts.delete(id);
+  const owner = findPerson(cls, a.owner);
+  let held = null;
+  if (owner) {
+    if (owner.held === id) { const mine = [...cls.arts.values()].filter((x) => x.owner === owner.id); owner.held = mine.length ? mine[mine.length - 1].id : null; }
+    held = heldUrl(cls, owner);
+  }
+  const left = [...cls.arts.values()].filter((x) => x.owner === a.owner).length;
+  broadcast(cls, { t: 'artdel', id, owner: a.owner, held, left });
+  if (cls.board === id) { cls.board = null; broadcast(cls, { t: 'board', board: null }); }
+}
+function acceptArt(cls, a) {
+  cls.arts.set(a.id, a);
+  const owner = findPerson(cls, a.owner);
+  const mine = [...cls.arts.values()].filter((x) => x.owner === a.owner);
+  while (mine.length > ARTS_PER_MEMBER) removeArt(cls, mine.shift().id);
+  if (owner) owner.held = a.id;
+  broadcast(cls, { t: 'artadd', a: artPub(cls, a) });
+}
+function dropArts(cls, ownerId) { // người rời lớp: xoá mọi hình của họ
+  for (const a of [...cls.arts.values()]) if (a.owner === ownerId) removeArt(cls, a.id);
+  for (const a of [...cls.pendingArts.values()]) if (a.owner === ownerId) { cls.pendingArts.delete(a.id); send(cls.teacher.ws, { t: 'artres', id: a.id }); }
+}
+const isTeacher = (ws) => ws.cls && ws.me === ws.cls.teacher;
 
 const handlers = {
   create(ws, d) {
@@ -243,7 +310,8 @@ const handlers = {
     const img = !char && d.img ? parseImg(d.img) : null;
     if (!char && d.img && !img) return fail(ws, 'Ảnh không hợp lệ hoặc quá lớn.');
     const teacher = { id: rid(4), name, role: 'teacher', ws, img, imgKey: rid(), char, x: 0, z: -3, ...lookOf(d) };
-    const cls = { code: newCode(), token: rid(16), teacher, members: new Map(), pending: new Map(), emptySince: 0 };
+    const cls = { code: newCode(), token: rid(16), teacher, members: new Map(), pending: new Map(), emptySince: 0,
+      msgs: [], nextMsg: 1, chatOff: false, arts: new Map(), pendingArts: new Map(), board: null, autoArt: false };
     classes.set(cls.code, cls);
     ws.cls = cls; ws.me = teacher;
     welcome(cls, teacher);
@@ -310,6 +378,7 @@ const handlers = {
     const m = cls.members.get(d.id);
     if (!m) return;
     cls.members.delete(m.id);
+    dropArts(cls, m.id);
     send(m.ws, { t: 'kicked' });
     m.ws.cls = null; m.ws.close();
     broadcast(cls, { t: 'left', id: m.id });
@@ -327,6 +396,100 @@ const handlers = {
     if (!cls || cls.pending.has(me.id) || !STYLES.includes(d.style)) return;
     Object.assign(me, lookOf(d));
     broadcast(cls, { t: 'style', id: me.id, style: me.style, seed: me.seed }, me);
+  },
+  chat(ws, d) {
+    const cls = ws.cls, me = ws.me;
+    if (!cls || cls.pending.has(me.id)) return;
+    if (me.role !== 'teacher') {
+      if (cls.chatOff) return notice(ws, 'Cô giáo đang tắt trò chuyện.');
+      if (me.muted) return notice(ws, 'Cô giáo đã tắt tiếng của em.');
+    }
+    const text = cleanText(d.text);
+    if (!text) return;
+    const now = Date.now();
+    me.chatAt = (me.chatAt || []).filter((t) => now - t < 20000);
+    if (me.chatAt.length >= 8 || (me.chatAt.length && now - me.chatAt[me.chatAt.length - 1] < 700)) return notice(ws, 'Em nhắn nhanh quá, chờ một chút nhé.');
+    me.chatAt.push(now);
+    const m = { id: cls.nextMsg++, from: me.id, name: me.name, role: me.role, text, ts: now };
+    cls.msgs.push(m);
+    if (cls.msgs.length > CHAT_KEEP) cls.msgs.shift();
+    broadcast(cls, { t: 'chat', m });
+  },
+  delmsg(ws, d) {
+    if (!isTeacher(ws)) return;
+    const cls = ws.cls, i = cls.msgs.findIndex((m) => m.id === d.id);
+    if (i < 0) return;
+    cls.msgs.splice(i, 1);
+    broadcast(cls, { t: 'chatdel', id: d.id });
+  },
+  mute(ws, d) {
+    if (!isTeacher(ws)) return;
+    const m = ws.cls.members.get(d.id);
+    if (!m) return;
+    m.muted = !!d.on;
+    broadcast(ws.cls, { t: 'muted', id: m.id, on: m.muted });
+    if (m.muted) notice(m.ws, 'Cô giáo đã tắt tiếng của em.'); else notice(m.ws, 'Em có thể nhắn tin lại rồi.');
+  },
+  chatoff(ws, d) {
+    if (!isTeacher(ws)) return;
+    ws.cls.chatOff = !!d.on;
+    broadcast(ws.cls, { t: 'chatoff', on: ws.cls.chatOff });
+  },
+  autoart(ws, d) {
+    if (!isTeacher(ws)) return;
+    ws.cls.autoArt = !!d.on;
+    send(ws, { t: 'autoart', on: ws.cls.autoArt });
+  },
+  art(ws, d) { // gửi hình vẽ: chờ giáo viên duyệt (giáo viên gửi thì hiện luôn)
+    const cls = ws.cls, me = ws.me;
+    if (!cls || cls.pending.has(me.id)) return;
+    const p = parseArt(d.img);
+    if (!p) return notice(ws, 'Hình không hợp lệ hoặc quá lớn.');
+    const now = Date.now();
+    if (me.artAt && now - me.artAt < 3000) return notice(ws, 'Gửi hình chậm lại một chút nhé.');
+    if (artBytes() + p.buf.length > ART_BUDGET) return notice(ws, 'Máy chủ đang đầy hình, thử lại sau nhé.');
+    const a = { id: rid(4), owner: me.id, name: me.name, key: rid(), ...p };
+    me.artAt = now;
+    if (me.role === 'teacher' || cls.autoArt) { acceptArt(cls, a); return notice(ws, 'Nhân vật của em đang cầm hình rồi.'); }
+    if ([...cls.pendingArts.values()].some((x) => x.owner === me.id)) return notice(ws, 'Hình trước của em đang chờ cô duyệt.');
+    if (cls.pendingArts.size >= 60) return notice(ws, 'Đang có quá nhiều hình chờ duyệt.');
+    cls.pendingArts.set(a.id, a);
+    notice(ws, 'Đã gửi hình cho cô duyệt.');
+    send(cls.teacher.ws, { t: 'artreq', a: artPub(cls, a) });
+  },
+  artok(ws, d) {
+    if (!isTeacher(ws)) return;
+    const cls = ws.cls, a = cls.pendingArts.get(d.id);
+    if (!a) return;
+    cls.pendingArts.delete(a.id);
+    send(ws, { t: 'artres', id: a.id });
+    if (findPerson(cls, a.owner)) acceptArt(cls, a);
+  },
+  artno(ws, d) {
+    if (!isTeacher(ws)) return;
+    const cls = ws.cls, a = cls.pendingArts.get(d.id);
+    if (!a) return;
+    cls.pendingArts.delete(a.id);
+    send(ws, { t: 'artres', id: a.id });
+    notice(findPerson(cls, a.owner)?.ws, 'Cô chưa duyệt hình này. Em thử gửi hình khác nhé.');
+  },
+  artdel(ws, d) { if (isTeacher(ws)) removeArt(ws.cls, d.id); },
+  board(ws, d) { // giáo viên chọn hình hiện trên bảng (art = null: gỡ xuống)
+    if (!isTeacher(ws)) return;
+    const cls = ws.cls;
+    if (d.art !== null && !cls.arts.has(d.art)) return;
+    cls.board = d.art;
+    broadcast(cls, { t: 'board', board: boardPub(cls) });
+  },
+  hold(ws, d) { // cầm lại / cất hình của mình
+    const cls = ws.cls, me = ws.me;
+    if (!cls || cls.pending.has(me.id)) return;
+    if (d.on) {
+      const mine = [...cls.arts.values()].filter((x) => x.owner === me.id);
+      if (!mine.length) return notice(ws, 'Em chưa có hình nào được duyệt.');
+      me.held = mine[mine.length - 1].id;
+    } else me.held = null;
+    broadcast(cls, { t: 'held', id: me.id, url: heldUrl(cls, me) });
   },
   emote(ws, d) {
     const cls = ws.cls;
@@ -365,6 +528,7 @@ wss.on('connection', (ws, req) => {
     } else if (cls.pending.delete(me.id)) {
       send(cls.teacher.ws, { t: 'resolved', id: me.id });
     } else if (cls.members.delete(me.id)) {
+      dropArts(cls, me.id);
       broadcast(cls, { t: 'left', id: me.id });
     }
     touchEmpty(cls);

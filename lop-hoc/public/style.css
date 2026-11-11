@@ -91,3 +91,35 @@ footer {
 .phrases button { white-space: nowrap; flex: none; padding: 3px 12px; font-size: 16px; }
 .hint { margin: 0; text-align: center; font-size: 14px; opacity: 0.75; }
 @media (max-width: 520px) { .actions button { font-size: 13px; } .actions i { font-size: 19px; } }
+
+/* Trò chuyện, hình vẽ, bảng */
+#room header .left { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+#chatToggle { padding: 4px 12px; }
+#chat {
+  position: fixed; left: 34px; bottom: 172px; width: min(330px, calc(100vw - 52px)); height: min(300px, 40vh);
+  display: flex; flex-direction: column; background: var(--card); border: 2px solid var(--ink);
+  border-radius: 14px; overflow: hidden; box-shadow: 4px 5px 0 rgba(36, 52, 180, 0.2);
+}
+#chatLog { list-style: none; margin: 0; padding: 8px 10px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; font-size: 17px; line-height: 1.2; }
+#chatLog li { overflow-wrap: anywhere; }
+#chatLog li.teacher b { background: var(--ink); color: var(--paper); padding: 0 6px; border-radius: 8px; }
+#chatLog li.mine b { text-decoration: underline; }
+#chatLog .del { padding: 0 6px; margin-left: 6px; box-shadow: none; font-size: 13px; }
+#chatForm { display: flex; flex-direction: row; align-items: center; gap: 6px; padding: 6px; border-top: 2px solid var(--ink); }
+#chatText { flex: 1; min-width: 0; font-size: 17px; padding: 5px 10px; }
+#chatForm button { padding: 3px 14px; box-shadow: 0 2px 0 #141d6e; }
+.artbtn { position: relative; flex: none; white-space: nowrap; padding: 3px 12px; font-size: 16px; cursor: pointer; overflow: hidden;
+  background: var(--card); border: 2px solid var(--ink); border-radius: 255px 18px 225px 18px / 18px 225px 18px 255px; box-shadow: 0 3px 0 var(--ink); }
+.artbtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+#artGallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.thumbwrap { position: relative; }
+.thumb { width: 100%; aspect-ratio: 1; padding: 2px; overflow: hidden; box-shadow: none; border-radius: 10px; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 7px; }
+.thumb.on { outline: 3px solid #ffb400; outline-offset: 1px; }
+.thumbwrap .x { position: absolute; top: -4px; right: -4px; padding: 0 6px; font-size: 13px; box-shadow: none; }
+#boardClear { margin-top: 8px; width: 100%; }
+.chk { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 16px; line-height: 1.15; margin-top: 4px; }
+.chk input { width: 18px; height: 18px; flex: none; accent-color: var(--ink); }
+#lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(20, 28, 90, 0.65); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: zoom-out; }
+#lightbox img { max-width: 92vw; max-height: 80vh; background: #fff; border: 4px solid var(--ink); border-radius: 8px; }
+#lightbox p { color: #fff; margin: 0; font-size: 22px; }

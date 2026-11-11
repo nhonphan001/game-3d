@@ -68,7 +68,10 @@
   <!-- Trong lớp -->
   <div id="room" hidden>
     <header>
-      <div class="chip">Mã lớp <b id="roomCode"></b> · <span id="count"></span></div>
+      <div class="left">
+        <div class="chip">Mã lớp <b id="roomCode"></b> · <span id="count"></span></div>
+        <button type="button" id="chatToggle" aria-expanded="false">💬 Trò chuyện<span id="chatBadge"></span></button>
+      </div>
       <div class="styles mine" role="group" aria-label="Kiểu hiển thị nhân vật của mình">
         <button type="button" data-style="flat">✏️ Nét vẽ</button>
         <button type="button" data-style="sketch">🧊 3D</button>
@@ -83,8 +86,29 @@
       <p id="noPending" class="note">Chưa có bạn nào xin vào. Hãy đọc mã lớp cho học sinh.</p>
       <h2>Trong lớp</h2>
       <ul id="memberList"></ul>
+      <h2>Hình vẽ chờ duyệt <span id="artPendingCount"></span></h2>
+      <ul id="artPendingList"></ul>
+      <p id="noArtPending" class="note">Chưa có hình nào chờ duyệt.</p>
+      <h2>Hình trong lớp</h2>
+      <div id="artGallery"></div>
+      <p id="noArts" class="note">Chưa có hình nào. Bấm vào một hình để chiếu lên bảng.</p>
+      <button type="button" id="boardClear" hidden>Gỡ hình khỏi bảng</button>
+      <h2>Cài đặt lớp</h2>
+      <label class="chk"><input type="checkbox" id="chatOffBox"> Tắt trò chuyện cả lớp</label>
+      <label class="chk"><input type="checkbox" id="autoArtBox"> Tự duyệt hình vẽ (không xem trước)</label>
     </aside>
     <p id="toast" class="toast" hidden></p>
+    <section id="chat" hidden aria-label="Trò chuyện trong lớp">
+      <ul id="chatLog" aria-live="polite"></ul>
+      <form id="chatForm" autocomplete="off">
+        <input id="chatText" type="text" maxlength="120" placeholder="Nhập tin nhắn…" aria-label="Tin nhắn">
+        <button id="chatSend" type="submit" class="primary">Gửi</button>
+      </form>
+    </section>
+    <div id="lightbox" hidden role="dialog" aria-label="Xem hình lớn">
+      <img id="lightImg" alt="Hình vẽ trên bảng">
+      <p id="lightCap"></p>
+    </div>
     <footer>
       <div class="actions" id="emotes">
         <button type="button" data-e="wave"><i>👋</i>Chào</button>
@@ -95,7 +119,10 @@
         <button type="button" data-e="cry"><i>😭</i>Khóc</button>
         <button type="button" data-e="angry"><i>😡</i>Giận</button>
       </div>
-      <div class="phrases" id="phrases"></div>
+      <div class="phrases" id="phrases">
+        <label class="artbtn">🖼️ Gửi hình vẽ<input id="artFile" type="file" accept="image/*"></label>
+        <button type="button" id="holdBtn" hidden>✋ Cất hình</button>
+      </div>
       <p class="hint">Chạm vào sân để đi tới đó · kéo để xoay góc nhìn</p>
     </footer>
   </div>

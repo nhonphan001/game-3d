@@ -8,7 +8,11 @@ Lớp học ảo nơi nhân vật vẽ tay của học sinh gặp nhau. Mỗi l�
 2. **Học sinh** mở cùng trang, nhập mã lớp + tên (biệt danh), chọn ảnh chụp nhân vật vẽ trên giấy. Trình duyệt tự tách nền giấy; có thanh "Tách nền" để chỉnh.
 3. Giáo viên thấy hình và tên trong mục "Chờ duyệt", bấm ✓ để cho vào lớp hoặc ✗ để từ chối. Giáo viên cũng có thể "Mời ra" một học sinh đang trong lớp.
 4. Khi tải ảnh, mỗi người chọn kiểu hiển thị cho nhân vật: **Nét vẽ** (tấm cắt giấy phẳng), **3D** (hình được bơm phồng thành khối, giữ nét vẽ gốc, tô bóng bằng nét gạch) hoặc **3D tô màu** (khối 3D, các vùng kín trong nét vẽ được tự tô màu; nút 🎲 đổi bộ màu). Vào lớp rồi vẫn đổi được, cả lớp thấy ngay.
-5. Trong lớp: chạm vào sân để đi, bấm biểu cảm (chào, cười, nhảy, tim, sao, khóc, giận) hoặc một câu chọn sẵn. Không có chat tự do.
+5. **Trò chuyện:** nút "💬 Trò chuyện" ở góc trên mở ô chat; tin hiện cả trong ô chat lẫn bóng thoại trên đầu nhân vật. Mỗi tin dài tối đa 120 ký tự, chỉ chữ (không gửi được hình hay đường dẫn bấm được), và mỗi người nhắn tối đa khoảng 1 tin mỗi giây, 8 tin mỗi 20 giây.
+6. **Hình vẽ:** nút "🖼️ Gửi hình vẽ" cho mỗi người gửi một bức vẽ (ảnh chụp, tự thu nhỏ). Hình chờ giáo viên duyệt; duyệt xong nhân vật **cầm hình** trên tay cho cả lớp thấy. Có nút "Cất hình" / "Cầm lại hình". Mỗi người giữ tối đa 2 hình, hình mới đẩy hình cũ nhất ra.
+7. **Bảng:** giáo viên bấm vào một hình trong mục "Hình trong lớp" để chiếu lên bảng cho cả lớp; bấm "Gỡ hình khỏi bảng" để trở lại. Ai bấm vào bảng cũng xem được hình to.
+8. **Công cụ của giáo viên:** "Tắt tiếng" từng bạn, xoá từng tin nhắn (✕ cạnh tin), "Tắt trò chuyện cả lớp", "Tự duyệt hình vẽ" (bỏ bước xem trước), xoá hình khỏi thư viện, "Mời ra". Hình của một bạn tự mất khi bạn rời lớp.
+9. Trong lớp: chạm vào sân để đi, bấm biểu cảm (chào, cười, nhảy, tim, sao, khóc, giận) hoặc một câu chọn sẵn. Không có chat tự do.
 
 ## Nhân vật đóng gói và tài khoản gán sẵn
 
@@ -56,13 +60,14 @@ Máy chủ tự nhận địa chỉ thật của người dùng từ tiêu đề
 
 - Ảnh gốc không rời khỏi máy học sinh: chỉ hình nhân vật đã tách nền (PNG, tối đa 400 KB) được gửi lên.
 - Học sinh chỉ nhập mã lớp và biệt danh, không cần email hay số điện thoại.
+- Tin nhắn (50 tin gần nhất) và hình vẽ cũng chỉ nằm trong bộ nhớ máy chủ, mất cùng lớp. Hình vẽ dùng tối đa 300 MB bộ nhớ cho mọi lớp cộng lại.
 - Mọi thứ chỉ nằm trong bộ nhớ máy chủ: học sinh rời lớp thì hình bị xoá; lớp trống quá 10 phút thì bị xoá; khởi động lại máy chủ là mất hết.
 - Giáo viên tải lại trang vẫn vào lại đúng lớp (trong cùng thẻ trình duyệt).
 - Trước khi dùng với học sinh thật, cần đối chiếu Nghị định 13/2023 về dữ liệu cá nhân trẻ em.
 
 ## Chưa có
 
-- Nút báo cáo cho giáo viên, trang quản lý nhiều lớp, lưu trữ lâu dài.
+- Bộ lọc từ ngữ cho chat: hiện chỉ có tắt tiếng, xoá tin và tắt chat do giáo viên làm thủ công. Không có nhắn riêng giữa hai người. Chưa có nút báo cáo, trang quản lý nhiều lớp, lưu trữ lâu dài.
 - Tách nền bằng mô hình phân đoạn; hiện chỉ dựa trên màu giấy nên ảnh cần nền giấy sáng, tương đối đều màu.
 - Khối 3D được suy ra tự động từ hình phẳng (dày ở giữa, mỏng ở mép), mặt sau là hình mặt trước lật lại; chưa tách khớp đầu/thân/tay.
 - Màu tự tô là phỏng đoán theo vùng kín, không hiểu đâu là tóc hay áo; vùng lớn ở phần trên được coi là da mặt.

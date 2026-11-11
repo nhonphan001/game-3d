@@ -205,30 +205,49 @@ scene.add(ground);
 
 // Bảng lớp ở cuối sân, hiện tên lớp và mã lớp
 const boardCv = document.createElement('canvas');
-boardCv.width = 1024; boardCv.height = 420;
+boardCv.width = 1024; boardCv.height = 560;
 const boardTex = new THREE.CanvasTexture(boardCv);
 boardTex.colorSpace = THREE.SRGBColorSpace;
+const boardState = { img: null, url: null, caption: '' };
 function drawBoard(code) {
-  const g = boardCv.getContext('2d');
-  g.fillStyle = CARD; g.fillRect(0, 0, 1024, 420);
+  const g = boardCv.getContext('2d'), W = 1024, H = 560;
+  g.fillStyle = CARD; g.fillRect(0, 0, W, H);
   g.strokeStyle = INK; g.lineWidth = 2; g.globalAlpha = 0.35;
-  for (let k = -420; k < 1024; k += 14) { g.beginPath(); g.moveTo(k, 420); g.lineTo(k + 420, 0); g.stroke(); }
-  g.globalAlpha = 1; g.lineWidth = 12; g.strokeRect(8, 8, 1008, 404);
-  g.fillStyle = CARD; g.fillRect(120, 70, 784, 280);
-  g.lineWidth = 4; g.strokeRect(120, 70, 784, 280);
-  g.fillStyle = INK; g.textAlign = 'center';
-  g.font = '700 92px "Dancing Script", cursive';
-  g.fillText('Lớp Học Nét Vẽ', 512, 190);
-  g.font = '64px "Patrick Hand", sans-serif';
-  g.fillText(code ? `Mã lớp: ${code}` : 'Chào mừng các bạn!', 512, 300);
+  for (let k = -H; k < W; k += 14) { g.beginPath(); g.moveTo(k, H); g.lineTo(k + H, 0); g.stroke(); }
+  g.globalAlpha = 1; g.lineWidth = 12; g.strokeRect(8, 8, W - 16, H - 16);
+  g.textAlign = 'center'; g.fillStyle = INK;
+  if (boardState.img) { // giáo viên đang chiếu một hình vẽ
+    const im = boardState.img, aw = W - 120, ah = H - 150, k = Math.min(aw / im.width, ah / im.height);
+    const w = im.width * k, h = im.height * k, x = (W - w) / 2, y = 38 + (ah - h) / 2;
+    g.fillStyle = '#fff'; g.fillRect(x - 8, y - 8, w + 16, h + 16);
+    g.drawImage(im, x, y, w, h);
+    g.lineWidth = 5; g.strokeRect(x - 8, y - 8, w + 16, h + 16);
+    g.fillStyle = INK; g.font = '52px "Patrick Hand", sans-serif';
+    g.fillText(boardState.caption.slice(0, 40), W / 2, H - 38);
+  } else {
+    g.fillStyle = CARD; g.fillRect(120, 90, 784, 300);
+    g.lineWidth = 4; g.strokeRect(120, 90, 784, 300);
+    g.fillStyle = INK;
+    g.font = '700 92px "Dancing Script", cursive';
+    g.fillText('Lớp Học Nét Vẽ', 512, 230);
+    g.font = '64px "Patrick Hand", sans-serif';
+    g.fillText(code ? `Mã lớp: ${code}` : 'Chào mừng các bạn!', 512, 340);
+  }
   boardTex.needsUpdate = true;
+}
+function setBoard(b) { // b: { url, name } hoặc null
+  boardState.url = b ? b.url : null;
+  if (!b) { boardState.img = null; drawBoard(session.code || ''); return; }
+  const im = new Image();
+  im.onload = () => { if (boardState.url !== b.url) return; boardState.img = im; boardState.caption = `Hình của ${b.name}`; drawBoard(session.code || ''); };
+  im.src = b.url;
 }
 drawBoard('');
 document.fonts?.ready.then(() => drawBoard(session.code || ''));
-const board = new THREE.Mesh(new THREE.PlaneGeometry(7.3, 3), new THREE.MeshBasicMaterial({ map: boardTex }));
-board.position.set(0, 2.3, -ROOM_R - 1.6);
+const board = new THREE.Mesh(new THREE.PlaneGeometry(7.3, 4), new THREE.MeshBasicMaterial({ map: boardTex }));
+board.position.set(0, 2.6, -ROOM_R - 1.6);
 scene.add(board);
-for (const x of [-3.2, 3.2]) {
+for (const x of [-3.45, 3.45]) {
   const leg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 0.1), new THREE.MeshBasicMaterial({ color: INK }));
   leg.position.set(x, 0.45, -ROOM_R - 1.6);
   scene.add(leg);
@@ -248,23 +267,37 @@ function emojiTex(ch) {
   }));
   return spriteCache.get(ch);
 }
+function wrapLines(text, max = 22, maxLines = 3) {
+  const lines = [];
+  let cur = '';
+  for (let w of text.split(' ')) {
+    while (w.length > max) { if (cur) { lines.push(cur); cur = ''; } lines.push(w.slice(0, max)); w = w.slice(max); }
+    const next = cur ? `${cur} ${w}` : w;
+    if (next.length > max && cur) { lines.push(cur); cur = w; } else cur = next;
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) { lines.length = maxLines; lines[maxLines - 1] = `${lines[maxLines - 1].slice(0, max - 1)}…`; }
+  return lines;
+}
 function textSprite(text, { teacher = false, bubble = false } = {}) {
   const font = `${bubble ? 44 : 40}px "Patrick Hand", "Comic Sans MS", sans-serif`;
   const probe = document.createElement('canvas').getContext('2d');
   probe.font = font;
-  const label = teacher ? `★ ${text}` : text;
-  const w = Math.ceil(probe.measureText(label).width) + 44, h = bubble ? 84 : 62;
+  const lines = bubble ? wrapLines(text) : [teacher ? `★ ${text}` : text];
+  const w = Math.ceil(Math.max(...lines.map((l) => probe.measureText(l).width))) + 44;
+  const boxH = bubble ? lines.length * 50 + 12 : 56, h = bubble ? boxH + 22 : 62;
   const tex = inkCanvas(w, h, (g) => {
     g.fillStyle = teacher && !bubble ? INK : CARD;
     g.lineWidth = 4;
-    g.beginPath(); g.roundRect(3, 3, w - 6, h - (bubble ? 22 : 6), 18); g.fill(); g.stroke();
-    if (bubble) { g.beginPath(); g.moveTo(w / 2 - 12, h - 20); g.lineTo(w / 2, h - 3); g.lineTo(w / 2 + 12, h - 20); g.fill(); g.stroke(); }
+    g.beginPath(); g.roundRect(3, 3, w - 6, bubble ? boxH : h - 6, 18); g.fill(); g.stroke();
+    if (bubble) { g.beginPath(); g.moveTo(w / 2 - 12, boxH - 2); g.lineTo(w / 2, h - 3); g.lineTo(w / 2 + 12, boxH - 2); g.fill(); g.stroke(); }
     g.fillStyle = teacher && !bubble ? CARD : INK;
     g.font = font; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(label, w / 2, (h - (bubble ? 16 : 0)) / 2 + 2);
+    const cy = 3 + (bubble ? boxH : h - 6) / 2;
+    lines.forEach((l, i) => g.fillText(l, w / 2, cy + (i - (lines.length - 1) / 2) * 50 + 2));
   });
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-  sp.scale.set((w / h) * (bubble ? 0.5 : 0.34), bubble ? 0.5 : 0.34, 1);
+  if (bubble) sp.scale.set(w / 168, h / 168, 1); else sp.scale.set((w / h) * 0.34, 0.34, 1);
   sp.renderOrder = bubble ? 12 : 10;
   return sp;
 }
@@ -290,6 +323,7 @@ const turnTo = (a, b, k) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k
 
 // ---------------------------------------------------------------- Nhân vật cắt giấy
 const avatars = new Map();
+const texLoader = new THREE.TextureLoader();
 class Avatar {
   constructor(m) {
     this.id = m.id; this.name = m.name; this.role = m.role;
@@ -326,6 +360,8 @@ class Avatar {
     this.root.add(this.flip, this.label, this.icon);
     this.rebuild();
     scene.add(this.root, this.shadow);
+    this.muted = !!m.muted;
+    if (m.held) this.setHeld(m.held);
   }
   rebuild() { // dựng lại hình khi có ảnh hoặc khi đổi kiểu
     if (this.rig) { this.rig.setMode(this.style); return; }
@@ -346,11 +382,34 @@ class Avatar {
     this.icon.material.map = emojiTex(EMOJI[e]); this.icon.material.needsUpdate = true;
     this.icon.visible = true;
   }
-  say(i) {
+  say(i) { this.sayText(PHRASES[i]); }
+  sayText(text, secs = 3.2) {
     if (this.bubble) { this.root.remove(this.bubble); this.bubble.material.map.dispose(); }
-    this.bubble = textSprite(PHRASES[i], { bubble: true });
-    this.bubbleT = 0;
+    this.bubble = textSprite(text, { bubble: true });
+    this.bubbleT = 0; this.bubbleDur = secs;
     this.root.add(this.bubble);
+  }
+  setHeld(url) { // tờ hình vẽ nhân vật đang cầm (null = cất đi)
+    if (this.held) {
+      this.root.remove(this.held);
+      this.held.traverse((o) => { o.geometry?.dispose(); o.material?.map?.dispose(); o.material?.dispose(); });
+      this.held = null;
+    }
+    this.heldUrl = url || null;
+    if (!url) return;
+    texLoader.load(url, (tex) => {
+      if (this.gone || this.heldUrl !== url) { tex.dispose(); return; }
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const a = tex.image.width / tex.image.height, S = 0.66;
+      const w = a >= 1 ? S : S * a, h = a >= 1 ? S / a : S;
+      const g = new THREE.Group();
+      const frame = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.06, h + 0.06), new THREE.MeshBasicMaterial({ color: INK, side: THREE.DoubleSide }));
+      const pic = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
+      pic.position.z = 0.004;
+      g.add(frame, pic);
+      this.held = g;
+      this.root.add(g);
+    });
   }
   update(dt, t) {
     const d = this.target.clone().sub(this.pos), dist = d.length();
@@ -403,14 +462,21 @@ class Avatar {
     }
     this.shadow.position.set(this.pos.x, 0.012, this.pos.z);
     this.shadow.scale.setScalar(Math.max(0.5, 1 - this.y * 0.35) * this.spawn);
+    if (this.held) { // tờ hình ở bên tay, lật theo hướng đi, đung đưa khi bước
+      const xo = this.rig ? 0.62 : Math.min(0.9, (this.fig?.width || 0.8) * 0.5 + 0.18), yo = this.rig ? 0.95 : Math.max(0.5, this.h * 0.4);
+      this.held.position.set((this.rig ? 1 : this.fx) * xo, yo + s(t * 2 + this.phase) * 0.01, this.rig ? 0.5 : 0.12);
+      this.held.rotation.z = -0.1 * (this.rig ? 1 : this.fx) + s(this.phase) * 0.06 * mv;
+      this.held.scale.setScalar(this.spawn * THREE.MathUtils.clamp(this.h / 1.5, 0.8, 1.4));
+    }
     if (this.bubble) {
       this.bubbleT += dt;
-      this.bubble.position.set(0, this.h + 0.72, 0);
-      if (this.bubbleT > 3.2) { this.root.remove(this.bubble); this.bubble.material.map.dispose(); this.bubble = null; }
+      this.bubble.position.set(0, this.h + 0.45 + this.bubble.scale.y / 2, 0);
+      if (this.bubbleT > (this.bubbleDur || 3.2)) { this.root.remove(this.bubble); this.bubble.material.map.dispose(); this.bubble = null; }
     }
   }
   dispose() {
     this.gone = true;
+    this.setHeld(null);
     this.rig?.dispose();
     scene.remove(this.root, this.shadow);
     this.fig.dispose();
@@ -420,7 +486,9 @@ class Avatar {
 const tmp = new THREE.Vector3();
 
 // ================================================================ Kết nối + trạng thái
-const session = { ws: null, me: null, role: null, code: '', max: 40, pending: new Map(), wantRoom: false };
+const session = { ws: null, me: null, role: null, code: '', max: 40, pending: new Map(), wantRoom: false,
+  arts: new Map(), pendingArts: new Map(), autoArt: false, hasArt: false };
+const chat = { open: false, unread: 0, off: false, muted: false };
 let role = 'student', cut = null, srcImg = null, look = { style: 'flat', seed: 0 };
 
 function show(screen) {
@@ -435,7 +503,9 @@ function toast(msg) {
 function resetRoom(msg) {
   for (const a of avatars.values()) a.dispose();
   avatars.clear();
-  session.pending.clear();
+  session.pending.clear(); session.arts.clear(); session.pendingArts.clear(); session.hasArt = false;
+  $('chatLog').replaceChildren(); chat.off = chat.muted = false; chat.unread = 0; setChatOpen(false);
+  setBoard(null);
   session.me = null; session.code = ''; session.role = null;
   try { sessionStorage.removeItem('lhnv-teacher'); } catch { /* không có bộ nhớ phiên */ }
   drawBoard('');
@@ -473,8 +543,17 @@ const on = {
     for (const m of d.members) avatars.set(m.id, new Avatar(m));
     $('roomCode').textContent = d.code;
     $('teacherPanel').hidden = d.role !== 'teacher';
-    drawBoard(d.code);
     show('room');
+    chat.off = !!d.chatOff; chat.muted = false; chat.unread = 0;
+    $('chatLog').replaceChildren();
+    for (const m of d.chat || []) addChat(m, true);
+    session.arts = new Map((d.arts || []).map((a) => [a.id, a]));
+    session.pendingArts = new Map((d.pendingArts || []).map((a) => [a.id, a]));
+    session.autoArt = !!d.autoArt;
+    session.hasArt = !!avatars.get(d.you)?.heldUrl;
+    setBoard(d.board || null);
+    setChatOpen(innerWidth >= 900);
+    syncChat(); syncHold();
     refreshLists();
     look = { style: avatars.get(d.you)?.style || 'flat', seed: avatars.get(d.you)?.seed || 0 };
     syncStyleButtons();
@@ -500,6 +579,28 @@ const on = {
   style(d) { avatars.get(d.id)?.setStyle(d.style, d.seed); },
   request(d) { session.pending.set(d.m.id, d.m); toast(`${d.m.name} xin vào lớp`); refreshLists(); },
   resolved(d) { session.pending.delete(d.id); refreshLists(); },
+  notice(d) { toast(d.msg); },
+  chat(d) { addChat(d.m); avatars.get(d.m.from)?.sayText(d.m.text, Math.min(7, 3 + d.m.text.length * 0.04)); },
+  chatdel(d) { $('chatLog').querySelector(`li[data-id="${d.id}"]`)?.remove(); },
+  chatoff(d) { chat.off = d.on; syncChat(); toast(d.on ? 'Cô giáo đã tắt trò chuyện.' : 'Trò chuyện đã được bật lại.'); refreshLists(); },
+  muted(d) { const a = avatars.get(d.id); if (a) a.muted = d.on; if (d.id === session.me) { chat.muted = d.on; syncChat(); } refreshLists(); },
+  artadd(d) {
+    avatars.get(d.a.owner)?.setHeld(d.a.url);
+    session.arts.set(d.a.id, d.a);
+    if (d.a.owner === session.me) session.hasArt = true;
+    syncHold(); refreshLists();
+  },
+  artdel(d) {
+    session.arts.delete(d.id);
+    avatars.get(d.owner)?.setHeld(d.held);
+    if (d.owner === session.me) session.hasArt = d.left > 0;
+    syncHold(); refreshLists();
+  },
+  held(d) { avatars.get(d.id)?.setHeld(d.url); syncHold(); },
+  board(d) { setBoard(d.board); refreshLists(); },
+  artreq(d) { session.pendingArts.set(d.a.id, d.a); toast(`${d.a.name} gửi một hình vẽ`); refreshLists(); },
+  artres(d) { session.pendingArts.delete(d.id); refreshLists(); },
+  autoart(d) { session.autoArt = d.on; refreshLists(); },
 };
 
 function refreshLists() {
@@ -524,8 +625,33 @@ function refreshLists() {
   $('pendingCount').textContent = session.pending.size ? `(${session.pending.size})` : '';
   $('noPending').hidden = session.pending.size > 0;
   $('memberList').replaceChildren(...students.map((a) => row({ name: a.name }, [
+    [a.muted ? 'Bật tiếng' : 'Tắt tiếng', a.muted ? 'Cho nhắn tin lại' : 'Không cho nhắn tin', () => sendMsg({ t: 'mute', id: a.id, on: !a.muted })],
     ['Mời ra', 'Mời ra khỏi lớp', () => sendMsg({ t: 'kick', id: a.id })],
   ])));
+  const pend = [...session.pendingArts.values()];
+  $('artPendingList').replaceChildren(...pend.map((a) => row({ name: a.name, img: a.url }, [
+    ['✓', 'Duyệt hình', () => sendMsg({ t: 'artok', id: a.id })],
+    ['✗', 'Từ chối hình', () => sendMsg({ t: 'artno', id: a.id })],
+  ])));
+  $('artPendingCount').textContent = pend.length ? `(${pend.length})` : '';
+  $('noArtPending').hidden = pend.length > 0;
+  const arts = [...session.arts.values()], onBoard = boardState.url;
+  $('artGallery').replaceChildren(...arts.map((a) => {
+    const w = document.createElement('div'), b = document.createElement('button'), x = document.createElement('button'), im = document.createElement('img');
+    w.className = 'thumbwrap';
+    b.type = 'button'; b.className = `thumb${a.url === onBoard ? ' on' : ''}`; b.title = `Chiếu lên bảng: hình của ${a.name}`;
+    b.setAttribute('aria-label', `Chiếu lên bảng: hình của ${a.name}`);
+    im.src = a.url; im.alt = `Hình của ${a.name}`; b.append(im);
+    b.onclick = () => sendMsg({ t: 'board', art: a.id });
+    x.type = 'button'; x.className = 'x'; x.textContent = '✕'; x.title = 'Xoá hình'; x.setAttribute('aria-label', `Xoá hình của ${a.name}`);
+    x.onclick = () => sendMsg({ t: 'artdel', id: a.id });
+    w.append(b, x);
+    return w;
+  }));
+  $('noArts').hidden = arts.length > 0;
+  $('boardClear').hidden = !onBoard;
+  $('chatOffBox').checked = chat.off;
+  $('autoArtBox').checked = session.autoArt;
 }
 
 // ================================================================ Giao diện vào lớp
@@ -613,7 +739,90 @@ for (const b of document.querySelectorAll('[data-style]')) b.onclick = () => cho
 for (const b of document.querySelectorAll('.shuffle')) b.onclick = () => chooseStyle('color', true);
 syncStyleButtons();
 
-// Biểu cảm + câu chọn sẵn (không có chat tự do)
+// ---------------------------------------------------------------- Trò chuyện
+function syncChat() {
+  const can = session.role === 'teacher' || (!chat.off && !chat.muted);
+  $('chatText').disabled = !can; $('chatSend').disabled = !can;
+  $('chatText').placeholder = can ? 'Nhập tin nhắn…' : chat.muted ? 'Cô giáo đã tắt tiếng của em' : 'Cô giáo đang tắt trò chuyện';
+  $('chatBadge').textContent = chat.unread ? ` (${chat.unread})` : '';
+}
+function setChatOpen(open) {
+  chat.open = open;
+  $('chat').hidden = !open;
+  $('chatToggle').setAttribute('aria-expanded', String(open));
+  if (open) { chat.unread = 0; syncChat(); $('chatLog').scrollTop = $('chatLog').scrollHeight; }
+}
+function addChat(m, quiet) {
+  const li = document.createElement('li'), b = document.createElement('b'), t = document.createElement('span');
+  li.dataset.id = m.id;
+  li.className = `${m.role === 'teacher' ? 'teacher' : ''} ${m.from === session.me ? 'mine' : ''}`.trim();
+  b.textContent = `${m.role === 'teacher' ? '★ ' : ''}${m.name}:`;
+  t.textContent = ` ${m.text}`;
+  li.append(b, t);
+  if (session.role === 'teacher') {
+    const d = document.createElement('button');
+    d.type = 'button'; d.className = 'del'; d.textContent = '✕'; d.title = 'Xoá tin nhắn'; d.setAttribute('aria-label', `Xoá tin nhắn của ${m.name}`);
+    d.onclick = () => sendMsg({ t: 'delmsg', id: m.id });
+    li.append(d);
+  }
+  const log = $('chatLog');
+  log.append(li);
+  while (log.children.length > 80) log.firstChild.remove();
+  log.scrollTop = log.scrollHeight;
+  if (!quiet && !chat.open && m.from !== session.me) { chat.unread++; syncChat(); }
+}
+$('chatToggle').onclick = () => setChatOpen(!chat.open);
+$('chatForm').onsubmit = (e) => {
+  e.preventDefault();
+  const text = $('chatText').value.trim();
+  if (!text) return;
+  sendMsg({ t: 'chat', text });
+  $('chatText').value = '';
+};
+$('chatOffBox').onchange = (e) => sendMsg({ t: 'chatoff', on: e.target.checked });
+$('autoArtBox').onchange = (e) => sendMsg({ t: 'autoart', on: e.target.checked });
+
+// ---------------------------------------------------------------- Hình vẽ: gửi lên, cầm trên tay, chiếu lên bảng
+async function prepArt(file) { // thu nhỏ ảnh chụp thành JPEG vừa đủ nhỏ cho máy chủ (≤ 380 KB)
+  const url = URL.createObjectURL(file);
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+  URL.revokeObjectURL(url);
+  let long = 1000, q = 0.85;
+  for (let i = 0; i < 6; i++) {
+    const k = Math.min(1, long / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(img, 0, 0, c.width, c.height);
+    const data = c.toDataURL('image/jpeg', q);
+    if (data.length * 0.75 < 380 * 1024) return data;
+    q = Math.max(0.55, q - 0.1); long = Math.round(long * 0.8);
+  }
+  return null;
+}
+$('artFile').onchange = async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  if (!f.type.startsWith('image/')) return toast('Hãy chọn một tệp ảnh.');
+  let data = null;
+  try { data = await prepArt(f); } catch { return toast('Không đọc được ảnh này.'); }
+  if (!data) return toast('Ảnh quá lớn, em chọn ảnh khác nhé.');
+  sendMsg({ t: 'art', img: data });
+};
+function syncHold() {
+  const me = avatars.get(session.me);
+  $('holdBtn').hidden = !session.hasArt;
+  $('holdBtn').textContent = me?.heldUrl ? '✋ Cất hình' : '🖼️ Cầm lại hình';
+}
+$('holdBtn').onclick = () => sendMsg({ t: 'hold', on: !avatars.get(session.me)?.heldUrl });
+$('boardClear').onclick = () => sendMsg({ t: 'board', art: null });
+function openLightbox(url, caption) { $('lightImg').src = url; $('lightCap').textContent = caption; $('lightbox').hidden = false; }
+$('lightbox').onclick = () => { $('lightbox').hidden = true; };
+addEventListener('keydown', (e) => { if (e.key === 'Escape') $('lightbox').hidden = true; });
+
+// Biểu cảm + câu chọn sẵn
 for (const b of document.querySelectorAll('#emotes button')) b.onclick = () => { avatars.get(session.me)?.play(b.dataset.e); sendMsg({ t: 'emote', e: b.dataset.e }); };
 PHRASES.forEach((p, i) => {
   const b = document.createElement('button');
@@ -631,6 +840,7 @@ canvas.addEventListener('pointerup', (e) => {
   if (!down || !me || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 7) return;
   ndc.set((e.clientX / canvas.clientWidth) * 2 - 1, -(e.clientY / canvas.clientHeight) * 2 + 1);
   ray.setFromCamera(ndc, camera);
+  if (boardState.img && ray.intersectObject(board).length) { openLightbox(boardState.url, boardState.caption); return; } // bấm vào bảng: xem hình to
   if (!ray.ray.intersectPlane(floor, tmp)) return;
   if (tmp.length() > ROOM_R) tmp.setLength(ROOM_R);
   me.target.set(tmp.x, 0, tmp.z);
@@ -670,4 +880,4 @@ renderer.setAnimationLoop(() => {
   controls.update();
   renderer.render(scene, camera);
 });
-window.lhnv = { session, avatars }; // tiện kiểm thử
+window.lhnv = { session, avatars, boardState, chat }; // tiện kiểm thử
