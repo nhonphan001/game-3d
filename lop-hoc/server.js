@@ -6,6 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const net = require('net');
 const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 3000;
@@ -70,6 +71,23 @@ function login(name, pin, ip) {
   fails.delete(keys[0]);
   if (!listCharacters().some((c) => c.id === acc.char)) return { err: 'Nhân vật của tài khoản này chưa có trên máy chủ.' };
   return { acc };
+}
+
+// Khi chạy sau Cloudflare, kết nối đến từ máy chủ của Cloudflare; địa chỉ thật của người dùng nằm trong
+// tiêu đề CF-Connecting-IP. Chỉ tin tiêu đề này khi kết nối thật sự đến từ dải địa chỉ của Cloudflare.
+const CLOUDFLARE = new net.BlockList();
+for (const c of ['173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22', '141.101.64.0/18', '108.162.192.0/18',
+  '190.93.240.0/20', '188.114.96.0/20', '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13', '104.24.0.0/14',
+  '172.64.0.0/13', '131.0.72.0/22']) { const [a, n] = c.split('/'); CLOUDFLARE.addSubnet(a, Number(n), 'ipv4'); }
+for (const c of ['2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32', '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32']) {
+  const [a, n] = c.split('/'); CLOUDFLARE.addSubnet(a, Number(n), 'ipv6');
+}
+function clientIp(req) {
+  const raw = req.socket.remoteAddress || '?';
+  const peer = raw.startsWith('::ffff:') ? raw.slice(7) : raw;
+  const viaCf = net.isIP(peer) && CLOUDFLARE.check(peer, net.isIPv6(peer) ? 'ipv6' : 'ipv4');
+  const real = req.headers['cf-connecting-ip'];
+  return viaCf && typeof real === 'string' && net.isIP(real) ? real : peer;
 }
 
 const classes = new Map(); // mã lớp -> { code, token, teacher, members: Map, pending: Map, emptySince }
@@ -140,7 +158,7 @@ function serveFile(res, root, rel) {
 const json = (res, code, body) => res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(JSON.stringify(body));
 // API quản trị: gán nhân vật + tên + mã bảo mật. Cần "Authorization: Bearer <ADMIN_TOKEN>".
 function adminApi(req, res, url) {
-  const ip = req.socket.remoteAddress || '?';
+  const ip = clientIp(req);
   if (!ADMIN_TOKEN) return json(res, 503, { error: 'Trang quản trị chưa được bật trên máy chủ (thiếu ADMIN_TOKEN).' });
   if (blocked(`a:${ip}`)) return json(res, 429, { error: 'Sai mã quản trị quá nhiều lần. Thử lại sau 5 phút.' });
   const given = (req.headers.authorization || '').replace(/^Bearer /, '');
@@ -324,7 +342,7 @@ const handlers = {
 
 const perIp = new Map();
 wss.on('connection', (ws, req) => {
-  const ip = req.socket.remoteAddress || '?';
+  const ip = clientIp(req);
   ws.ip = ip;
   const n = (perIp.get(ip) || 0) + 1;
   perIp.set(ip, n);

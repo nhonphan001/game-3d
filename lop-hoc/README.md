@@ -42,6 +42,16 @@ curl -fsSL https://raw.githubusercontent.com/nhonphan001/game-3d/main/deploy/ins
 
 Script cài Node.js và git, tải repo vào `/opt/game-3d`, tạo dịch vụ systemd `lop-hoc` chạy bằng tài khoản riêng `lophoc` ở cổng 3000 (đổi bằng `PORT=3001`), và mở cổng đó trên firewalld. Lần đầu, script tạo mã quản trị trong `/etc/lop-hoc.env` và in ra một lần. Script cũng bật bộ hẹn giờ `lop-hoc-update.timer`: 5 phút một lần VPS tự lấy bản mới từ GitHub; nhân vật mới có ngay, còn khi mã máy chủ đổi thì dịch vụ tự khởi động lại (các lớp đang mở phải vào lại). Tài khoản đã gán lưu ở `/var/lib/lop-hoc`. Sau đó mở `http://<IP của VPS>:3000`.
 
+### HTTPS qua Cloudflare
+
+Nếu có tên miền đang dùng Cloudflare, tạo một tên miền con cho lớp học (ví dụ `lophoc.<tên miền>`):
+
+1. **DNS:** thêm bản ghi `A` tên `lophoc` trỏ về IP của VPS, bật Proxy (đám mây màu cam).
+2. **Rules → Origin Rules:** tạo luật "Hostname equals `lophoc.<tên miền>`" → **Destination Port: Rewrite to 3000**.
+3. **Chế độ SSL cho tên miền con này phải là Flexible** (Cloudflare nối tới VPS bằng HTTP). Nếu cả tên miền đang ở Full, tạo một **Configuration Rule** cho hostname này đặt SSL = Flexible.
+
+Máy chủ tự nhận địa chỉ thật của người dùng từ tiêu đề `CF-Connecting-IP` khi kết nối đến từ dải địa chỉ của Cloudflare. Với Flexible, chặng Cloudflare → VPS không mã hoá.
+
 ## Dữ liệu và quyền riêng tư
 
 - Ảnh gốc không rời khỏi máy học sinh: chỉ hình nhân vật đã tách nền (PNG, tối đa 400 KB) được gửi lên.
