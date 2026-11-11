@@ -1,0 +1,24 @@
+[Unit]
+Description=Lop Hoc Net Ve (may chu lop hoc)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=lophoc
+Group=lophoc
+WorkingDirectory=/opt/game-3d/lop-hoc
+Environment=NODE_ENV=production
+Environment=PORT=3000
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=3
+# Giới hạn quyền của tiến trình: không ghi được vào hệ thống, không đọc thư mục người dùng
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

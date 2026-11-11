@@ -21,6 +21,16 @@ npm start          # mặc định cổng 3000, đổi bằng biến PORT
 
 Mở `http://localhost:3000`. Để nhiều máy cùng vào, đưa thư mục repo lên một dịch vụ chạy được Node.js có hỗ trợ WebSocket (máy chủ dùng thư viện three.js trong `../nhan-vat-3d/vendor`, nên cần triển khai cả repo). Khi chạy thật nên đặt sau HTTPS.
 
+## Cài lên VPS (Rocky Linux)
+
+Trên VPS, chạy bằng root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nhonphan001/game-3d/main/deploy/install.sh | sudo bash
+```
+
+Script cài Node.js và git, tải repo vào `/opt/game-3d`, tạo dịch vụ systemd `lop-hoc` chạy bằng tài khoản riêng `lophoc` ở cổng 3000 (đổi bằng `PORT=3001`), và mở cổng đó trên firewalld. Chạy lại đúng lệnh này để cập nhật bản mới. Sau đó mở `http://<IP của VPS>:3000`.
+
 ## Dữ liệu và quyền riêng tư
 
 - Ảnh gốc không rời khỏi máy học sinh: chỉ hình nhân vật đã tách nền (PNG, tối đa 400 KB) được gửi lên.

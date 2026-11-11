@@ -14,6 +14,8 @@ const MAX_CLASSES = 200;
 const MAX_IMG = 400 * 1024;          // ảnh nhân vật đã tách nền, PNG
 const ROOM_R = 9;                    // bán kính sân lớp (mét)
 const EMPTY_TTL = 10 * 60 * 1000;    // lớp trống quá 10 phút thì xoá
+const MAX_PER_IP = 100;              // một trường có thể chung một địa chỉ mạng, nên để rộng hơn một lớp
+const MAX_SOCKETS = 3000;
 const EMOTES = ['wave', 'laugh', 'cry', 'angry', 'jump', 'heart', 'star'];
 const PHRASES = 8;                   // số câu chọn sẵn (nội dung nằm ở trình duyệt)
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -200,7 +202,13 @@ const handlers = {
   },
 };
 
-wss.on('connection', (ws) => {
+const perIp = new Map();
+wss.on('connection', (ws, req) => {
+  const ip = req.socket.remoteAddress || '?';
+  const n = (perIp.get(ip) || 0) + 1;
+  perIp.set(ip, n);
+  ws.on('close', () => { const k = perIp.get(ip) - 1; if (k > 0) perIp.set(ip, k); else perIp.delete(ip); });
+  if (n > MAX_PER_IP || wss.clients.size > MAX_SOCKETS) { ws.close(1013, 'busy'); return; }
   ws.alive = true;
   ws.count = 0;
   ws.on('pong', () => { ws.alive = true; });
