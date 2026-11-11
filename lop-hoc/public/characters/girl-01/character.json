@@ -1,0 +1,18 @@
+{
+  "id": "girl-01",
+  "title": "Girl 01",
+  "version": 1,
+  "height": 2.15,
+  "model": "model.js",
+  "doll": {
+    "metersPerPx": 0.00316,
+    "feet": { "x": 150, "y": 586 },
+    "ink": "#2a2a2a",
+    "paper": "#fdfaf4",
+    "head": { "file": "layers/head.png", "x": 50, "y": 0, "w": 212, "h": 187, "px": 148, "py": 180 },
+    "body": { "file": "layers/body.png", "x": 2, "y": 184, "w": 288, "h": 406, "px": 140, "py": 490 },
+    "face": { "eyes": [[67, 113, 20], [135, 112, 18]], "mouth": [102, 150] },
+    "hand": { "x": 256, "y": 495 },
+    "anger": { "x": 250, "y": 40 }
+  }
+}
