@@ -189,3 +189,7 @@ form.inline button { padding: 3px 14px; box-shadow: 0 2px 0 #141d6e; }
 #videoMsg { position: absolute; inset: 0; margin: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; color: #fff; background: rgba(13, 20, 80, 0.88); font-size: 17px; z-index: 1; pointer-events: none; }
 #videoPlay { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3; pointer-events: auto; padding: 8px 18px; font-size: 20px; }
 #videoDock.big { left: 50% !important; top: 50% !important; transform: translate(-50%, -50%); width: min(96vw, 142vh) !important; height: auto !important; aspect-ratio: 16 / 9; z-index: 45; pointer-events: auto; border: 3px solid var(--ink); border-radius: 8px; box-shadow: 0 0 0 100vmax rgba(20, 28, 90, 0.65); }
+/* Học sinh chỉ xem: lớp chắn trong suốt nằm trên video, mọi chạm đều không tới được trình phát (kể cả khi phóng to) */
+#videoShield { position: absolute; inset: 0; z-index: 1; }
+#videoDock.teacher #videoShield { display: none; }
+#videoDock.big #videoShield { pointer-events: auto; }
