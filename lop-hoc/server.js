@@ -2,7 +2,8 @@
 // Mỗi lớp: 1 giáo viên + tối đa 40 học sinh. Học sinh nhập mã lớp + tên + ảnh nhân vật,
 // giáo viên duyệt rồi mới vào lớp. Có trò chuyện bằng chữ (giáo viên tắt tiếng, xoá tin, tắt chat được),
 // hình vẽ gửi lên phải được giáo viên duyệt, rồi nhân vật cầm hình và giáo viên chiếu lên bảng.
-// Dữ liệu chỉ nằm trong bộ nhớ: ai rời lớp thì hình bị xoá, tắt máy chủ là mất hết.
+// Lớp được lưu xuống đĩa (DATA_DIR/classes): thông tin lớp, danh sách học sinh đã duyệt, 50 tin gần nhất. Hình vẽ gửi lên chỉ ở bộ nhớ.
+// Mất kết nối vẫn giữ chỗ GRACE_MIN phút; lớp không ai vào quá CLASS_TTL_DAYS ngày thì bị xoá.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -17,7 +18,9 @@ const MAX_STUDENTS = 40;
 const MAX_CLASSES = 200;
 const MAX_IMG = 400 * 1024;          // ảnh nhân vật đã tách nền, PNG
 const ROOM_R = 9;                    // bán kính sân lớp (mét)
-const EMPTY_TTL = 10 * 60 * 1000;    // lớp trống quá 10 phút thì xoá
+const GRACE_MS = Number(process.env.GRACE_MIN || 15) * 60 * 1000;   // mất kết nối vẫn giữ chỗ trong lớp ngần này thời gian
+const PENDING_GRACE_MS = 5 * 60 * 1000;                              // học sinh đang chờ duyệt mà mất kết nối: giữ 5 phút
+const CLASS_TTL_MS = Number(process.env.CLASS_TTL_DAYS || 30) * 24 * 3600 * 1000; // lớp không ai vào quá ngần này ngày thì bị xoá
 const MAX_PER_IP = 100;              // một trường có thể chung một địa chỉ mạng, nên để rộng hơn một lớp
 const MAX_SOCKETS = 3000;
 const EMOTES = ['wave', 'laugh', 'cry', 'angry', 'jump', 'heart', 'star'];
@@ -114,7 +117,72 @@ const findPerson = (cls, id) => (cls.teacher.id === id ? cls.teacher : cls.membe
 const notice = (ws, msg) => send(ws, { t: 'notice', msg });
 const everyone = (cls) => [cls.teacher, ...cls.members.values()];
 
-const classes = new Map(); // mã lớp -> { code, token, teacher, members: Map, pending: Map, emptySince }
+// ---------------------------------------------------------------- Lưu lớp học vào đĩa
+// Lưu: thông tin lớp, mã giáo viên (dạng băm), hình giáo viên, danh sách học sinh đã được duyệt (tên + hình nhân vật
+// + dấu nhận máy), 50 tin nhắn gần nhất. KHÔNG lưu: hình vẽ gửi lên, bảng, ai đang trong lớp.
+const CLASS_DIR = path.join(DATA_DIR, 'classes');
+const classFile = (code) => path.join(CLASS_DIR, `${code}.json`);
+const imgDir = (code) => path.join(CLASS_DIR, code);
+const KEY_ABC = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const normKey = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const today = () => new Date().toISOString().slice(0, 10);
+function writeImg(code, key, buf) {
+  try {
+    fs.mkdirSync(imgDir(code), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(imgDir(code), `${key}.png`), buf, { mode: 0o600 });
+  } catch (e) { console.error('Không ghi được hình:', e.message); }
+}
+const saveTimers = new Map();
+function saveClass(cls) { // gộp nhiều thay đổi liên tiếp thành một lần ghi
+  if (saveTimers.has(cls.code)) return;
+  saveTimers.set(cls.code, setTimeout(() => { saveTimers.delete(cls.code); saveClassNow(cls); }, 1500));
+}
+function saveClassNow(cls) {
+  if (classes.get(cls.code) !== cls) return;
+  const t = cls.teacher;
+  const data = {
+    v: 1, code: cls.code, title: cls.title, created: cls.created, lastActive: cls.lastActive, keySalt: cls.keySalt, keyHash: cls.keyHash,
+    chatOff: cls.chatOff, autoArt: cls.autoArt, nextMsg: cls.nextMsg, msgs: cls.msgs,
+    teacher: { name: t.name, char: t.char, imgKey: t.img ? t.imgKey : null, style: t.style, seed: t.seed },
+    roster: [...cls.roster.values()].map((r) => ({ name: r.name, nameKey: r.nameKey, imgKey: r.img ? r.imgKey : null, char: r.char, style: r.style, seed: r.seed, devSalt: r.devSalt, devHash: r.devHash, added: r.added })),
+  };
+  try {
+    fs.mkdirSync(CLASS_DIR, { recursive: true, mode: 0o700 });
+    const tmpFile = `${classFile(cls.code)}.tmp`;
+    fs.writeFileSync(tmpFile, JSON.stringify(data), { mode: 0o600 });
+    fs.renameSync(tmpFile, classFile(cls.code));
+  } catch (e) { console.error('Không lưu được lớp:', e.message); }
+}
+const readImg = (code, key) => { try { return key ? fs.readFileSync(path.join(imgDir(code), `${key}.png`)) : null; } catch { return null; } };
+function loadClasses() {
+  let files = [];
+  try { files = fs.readdirSync(CLASS_DIR).filter((f) => /^[A-Z0-9]{6}\.json$/.test(f)); } catch { return; }
+  for (const f of files) {
+    try {
+      const d = JSON.parse(fs.readFileSync(path.join(CLASS_DIR, f), 'utf8'));
+      const t = d.teacher || {};
+      const teacher = { id: rid(4), name: t.name, role: 'teacher', ws: null, img: readImg(d.code, t.imgKey), imgKey: t.imgKey || rid(), char: t.char || null, x: 0, z: -3, style: t.style, seed: t.seed, resume: rid(16), offlineAt: Date.now(), goneSent: true };
+      const roster = new Map();
+      for (const r of d.roster || []) roster.set(r.nameKey, { ...r, img: readImg(d.code, r.imgKey), imgKey: r.imgKey || rid() });
+      classes.set(d.code, { code: d.code, title: d.title || '', created: d.created, lastActive: d.lastActive || Date.now(), keySalt: d.keySalt, keyHash: d.keyHash, teacher,
+        members: new Map(), pending: new Map(), roster, msgs: d.msgs || [], nextMsg: d.nextMsg || 1, chatOff: !!d.chatOff, autoArt: !!d.autoArt,
+        arts: new Map(), pendingArts: new Map(), board: null });
+    } catch (e) { console.error(`Bỏ qua tệp lớp hỏng ${f}:`, e.message); }
+  }
+  console.log(`Đã nạp ${classes.size} lớp đã lưu.`);
+}
+function destroyClass(cls) { // xoá hẳn một lớp và mọi dữ liệu của nó
+  for (const p of [cls.teacher, ...cls.members.values(), ...cls.pending.values()]) {
+    if (p.ws) { send(p.ws, { t: 'classgone' }); p.ws.cls = null; p.ws.close(); }
+  }
+  classes.delete(cls.code);
+  const tm = saveTimers.get(cls.code);
+  if (tm) { clearTimeout(tm); saveTimers.delete(cls.code); }
+  fs.rmSync(classFile(cls.code), { force: true });
+  fs.rmSync(imgDir(cls.code), { recursive: true, force: true });
+}
+
+const classes = new Map(); // mã lớp -> lớp (xem create); được lưu vào DATA_DIR/classes
 
 const rid = (n = 8) => crypto.randomBytes(n).toString('hex');
 function newCode() {
@@ -145,7 +213,7 @@ const clampPos = (x, z) => {
 const lookOf = (d) => ({ style: STYLES.includes(d.style) ? d.style : 'flat', seed: Number.isInteger(d.seed) ? ((d.seed % 100) + 100) % 100 : 0 });
 const heldUrl = (cls, m) => { const a = m.held && cls.arts.get(m.held); return a ? `/art/${cls.code}/${a.key}` : null; };
 const boardPub = (cls) => { const a = cls.board && cls.arts.get(cls.board); return a ? artPub(cls, a) : null; };
-const pub = (cls, m) => ({ id: m.id, name: m.name, role: m.role, style: m.style, seed: m.seed, char: m.char || null, muted: !!m.muted, held: heldUrl(cls, m), img: m.img ? `/img/${cls.code}/${m.imgKey}.png` : null, x: m.x, z: m.z });
+const pub = (cls, m) => ({ id: m.id, name: m.name, role: m.role, style: m.style, seed: m.seed, char: m.char || null, muted: !!m.muted, away: !m.ws, held: heldUrl(cls, m), img: m.img ? `/img/${cls.code}/${m.imgKey}.png` : null, x: m.x, z: m.z });
 const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); };
 function broadcast(cls, msg, except) {
   for (const m of cls.members.values()) if (m !== except) send(m.ws, msg);
@@ -157,34 +225,79 @@ function nameTaken(cls, name) {
   for (const m of [...cls.members.values(), ...cls.pending.values()]) if (m.name.toLowerCase() === n) return true;
   return false;
 }
-function welcome(cls, me) {
+function welcome(cls, me, extra = {}) {
   const members = [...cls.members.values()].map((m) => pub(cls, m));
-  if (cls.teacher.ws) members.push(pub(cls, cls.teacher));
-  const msg = { t: 'welcome', you: me.id, role: me.role, code: cls.code, max: MAX_STUDENTS, members,
-    chat: cls.msgs, chatOff: cls.chatOff, board: boardPub(cls) };
+  const t = cls.teacher;
+  if (t.ws || !t.goneSent) members.push(pub(cls, t)); // giáo viên vắng quá lâu thì không hiện trong lớp
+  const msg = { t: 'welcome', you: me.id, role: me.role, code: cls.code, title: cls.title, max: MAX_STUDENTS, members, resume: me.resume,
+    chat: cls.msgs, chatOff: cls.chatOff, board: boardPub(cls), ...extra };
   if (me.role === 'teacher') {
-    msg.token = cls.token; msg.pending = [...cls.pending.values()].map((m) => pub(cls, m));
+    msg.pending = [...cls.pending.values()].map((m) => pub(cls, m));
     msg.arts = [...cls.arts.values()].map((a) => artPub(cls, a));
     msg.pendingArts = [...cls.pendingArts.values()].map((a) => artPub(cls, a));
     msg.autoArt = cls.autoArt;
+    msg.roster = [...cls.roster.values()].map((r) => rosterPub(cls, r));
   }
   send(me.ws, msg);
 }
-function touchEmpty(cls) {
-  const anyone = cls.teacher.ws || cls.members.size || cls.pending.size;
-  cls.emptySince = anyone ? 0 : Date.now();
+const rosterPub = (cls, e) => ({ key: e.nameKey, name: e.name, img: e.img ? `/img/${cls.code}/${e.imgKey}.png` : null });
+function touchEmpty(cls) { // ghi nhận lớp còn hoạt động
+  cls.lastActive = Date.now();
+  saveClass(cls);
 }
 
 // ---------------------------------------------------------------- HTTP
 const PUBLIC = path.join(__dirname, 'public');
 const VENDOR = path.join(__dirname, '..', 'nhan-vat-3d', 'vendor');
 const MIME = { '.json': 'application/json; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml' };
-function serveFile(res, root, rel) {
+// Tệp giao diện luôn phải hỏi lại máy chủ (ETag) và Cloudflare không được giữ: nếu không, người dùng
+// sẽ nhận bản cũ của app.js / style.css sau khi cập nhật. Thư viện three.js đổi rất hiếm nên cho giữ lâu.
+const verCache = { at: 0, map: {} };
+function assetVersions() { // /app.js -> mã phiên bản theo nội dung tệp
+  const now = Date.now();
+  if (now - verCache.at < 2000) return verCache.map;
+  const map = {};
+  const walk = (dir, rel) => {
+    let list;
+    try { list = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const d of list) {
+      if (d.isDirectory()) walk(path.join(dir, d.name), `${rel}${d.name}/`);
+      else if (/\.(js|css)$/.test(d.name)) {
+        try { const st = fs.statSync(path.join(dir, d.name)); map[`/${rel}${d.name}`] = `${st.size.toString(36)}${Math.floor(st.mtimeMs / 1000).toString(36)}`; } catch { /* tệp vừa bị xoá */ }
+      }
+    }
+  };
+  walk(PUBLIC, '');
+  verCache.at = now; verCache.map = map;
+  return map;
+}
+function renderHtml(raw) { // gắn mã phiên bản vào mọi tệp .js/.css để chúng đổi địa chỉ mỗi khi nội dung đổi
+  const ver = assetVersions();
+  let html = raw.replace(/<script type="importmap">([\s\S]*?)<\/script>/, (m, body) => {
+    let map;
+    try { map = JSON.parse(body); } catch { return m; }
+    map.imports = map.imports || {};
+    for (const [u, v] of Object.entries(ver)) if (u.endsWith('.js')) map.imports[u] = `${u}?v=${v}`;
+    return `<script type="importmap">${JSON.stringify(map)}</script>`;
+  });
+  html = html.replace(/\b(href|src)="([^":?#]+\.(?:js|css))"/g, (m, attr, p) => { const u = p.startsWith('/') ? p : `/${p}`; return ver[u] ? `${attr}="${u}?v=${ver[u]}"` : m; });
+  return html;
+}
+function serveFile(req, res, root, rel, longCache) {
   const file = path.normalize(path.join(root, rel));
   if (!file.startsWith(root + path.sep)) { res.writeHead(403).end(); return; }
-  fs.readFile(file, (err, data) => {
-    if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found'); return; }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff' }).end(data);
+  fs.stat(file, (err, st) => {
+    if (err || !st.isFile()) { res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found'); return; }
+    const ext = path.extname(file);
+    const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': longCache ? 'public, max-age=604800' : 'no-cache', ...(longCache ? {} : { 'Cloudflare-CDN-Cache-Control': 'no-store' }) };
+    fs.readFile(file, (e2, data) => {
+      if (e2) { res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found'); return; }
+      if (ext === '.html') data = Buffer.from(renderHtml(data.toString('utf8')));
+      headers.ETag = `W/"${crypto.createHash('sha1').update(data).digest('hex').slice(0, 16)}"`;
+      if (req.headers['if-none-match'] === headers.ETag) { res.writeHead(304, headers).end(); return; }
+      res.writeHead(200, headers).end(data);
+    });
   });
 }
 const json = (res, code, body) => res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(JSON.stringify(body));
@@ -238,7 +351,7 @@ const server = http.createServer((req, res) => {
   const im = /^\/img\/([A-Z0-9]{6})\/([0-9a-f]{16})\.png$/.exec(p);
   if (im) {
     const cls = classes.get(im[1]);
-    const all = cls ? [cls.teacher, ...cls.members.values(), ...cls.pending.values()] : [];
+    const all = cls ? [cls.teacher, ...cls.members.values(), ...cls.pending.values(), ...cls.roster.values()] : [];
     const m = all.find((x) => x.img && x.imgKey === im[2]);
     if (!m) { res.writeHead(404).end(); return; }
     res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' }).end(m.img);
@@ -252,8 +365,8 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': a.type, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'" }).end(a.buf);
     return;
   }
-  if (p.startsWith('/vendor/')) return serveFile(res, VENDOR, p.slice(8));
-  serveFile(res, PUBLIC, p === '/' ? 'index.html' : p.slice(1));
+  if (p.startsWith('/vendor/')) return serveFile(req, res, VENDOR, p.slice(8), true);
+  serveFile(req, res, PUBLIC, p === '/' ? 'index.html' : p.slice(1), false);
 });
 
 // ---------------------------------------------------------------- WebSocket
@@ -295,8 +408,40 @@ function dropArts(cls, ownerId) { // người rời lớp: xoá mọi hình củ
   for (const a of [...cls.pendingArts.values()]) if (a.owner === ownerId) { cls.pendingArts.delete(a.id); send(cls.teacher.ws, { t: 'artres', id: a.id }); }
 }
 const isTeacher = (ws) => ws.cls && ws.me === ws.cls.teacher;
+function attach(cls, person, ws) { // gắn một kết nối mới vào người đã có trong lớp (nối lại, hoặc giáo viên mở lại lớp)
+  const old = person.ws;
+  person.ws = ws; ws.cls = cls; ws.me = person;
+  if (old && old !== ws) { old.cls = null; old.close(); }
+  person.offlineAt = 0;
+  touchEmpty(cls);
+  if (cls.pending.has(person.id)) { send(ws, { t: 'pending', teacherHere: !!cls.teacher.ws, code: cls.code, id: person.id, resume: person.resume }); return; }
+  if (person === cls.teacher && person.goneSent) { person.goneSent = false; broadcast(cls, { t: 'joined', m: pub(cls, person) }, person); }
+  else broadcast(cls, { t: 'away', id: person.id, on: false }, person);
+  welcome(cls, person);
+}
+function removeMember(cls, m) {
+  if (cls.pending.delete(m.id)) send(cls.teacher.ws, { t: 'resolved', id: m.id });
+  else if (cls.members.delete(m.id)) { dropArts(cls, m.id); broadcast(cls, { t: 'left', id: m.id }); }
+}
+function rosterAdd(cls, m) {
+  const nameKey = m.name.toLowerCase(), devSalt = rid(8);
+  const e = { name: m.name, nameKey, img: m.img, imgKey: m.imgKey, char: null, style: m.style, seed: m.seed, devSalt, devHash: m.dev ? hashCode(m.dev, devSalt) : '', added: today() };
+  cls.roster.set(nameKey, e);
+  if (e.img) writeImg(cls.code, e.imgKey, e.img);
+  saveClass(cls);
+  send(cls.teacher.ws, { t: 'rosteradd', r: rosterPub(cls, e) });
+}
+function rosterDel(cls, key) {
+  const e = cls.roster.get(key);
+  if (!e) return;
+  cls.roster.delete(key);
+  fs.rmSync(path.join(imgDir(cls.code), `${e.imgKey}.png`), { force: true });
+  saveClass(cls);
+  send(cls.teacher.ws, { t: 'rosterdel', key });
+}
 
 const handlers = {
+  ping(ws) { send(ws, { t: 'pong' }); },
   create(ws, d) {
     if (ws.cls) return;
     if (classes.size >= MAX_CLASSES) return fail(ws, 'Máy chủ đang đầy lớp, thử lại sau nhé.');
@@ -310,25 +455,45 @@ const handlers = {
     } else if (accounts.has(name.toLowerCase())) return fail(ws, 'Tên này đã được dành riêng. Hãy nhập mã bảo mật hoặc chọn tên khác.');
     const img = !char && d.img ? parseImg(d.img) : null;
     if (!char && d.img && !img) return fail(ws, 'Ảnh không hợp lệ hoặc quá lớn.');
-    const teacher = { id: rid(4), name, role: 'teacher', ws, img, imgKey: rid(), char, x: 0, z: -3, ...lookOf(d) };
-    const cls = { code: newCode(), token: rid(16), teacher, members: new Map(), pending: new Map(), emptySince: 0,
+    const teacher = { id: rid(4), name, role: 'teacher', ws, img, imgKey: rid(), char, x: 0, z: -3, resume: rid(16), ...lookOf(d) };
+    const key = Array.from(crypto.randomBytes(10), (b) => KEY_ABC[b % KEY_ABC.length]).join('');
+    const keySalt = rid(8);
+    const cls = { code: newCode(), title: cleanText(d.title).slice(0, 30), created: today(), lastActive: Date.now(), keySalt, keyHash: hashCode(key, keySalt),
+      teacher, members: new Map(), pending: new Map(), roster: new Map(),
       msgs: [], nextMsg: 1, chatOff: false, arts: new Map(), pendingArts: new Map(), board: null, autoArt: false };
     classes.set(cls.code, cls);
+    if (img) writeImg(cls.code, teacher.imgKey, img);
+    saveClassNow(cls);
     ws.cls = cls; ws.me = teacher;
-    welcome(cls, teacher);
+    welcome(cls, teacher, { key: `${key.slice(0, 5)}-${key.slice(5)}` }); // mã giáo viên chỉ hiện đúng một lần
   },
-  rejoin(ws, d) { // giáo viên tải lại trang
+  open(ws, d) { // giáo viên mở lại lớp đã lưu bằng mã lớp + mã giáo viên
+    if (ws.cls) return;
+    const code = String(d.code || '').toUpperCase().trim();
+    const cls = classes.get(code);
+    const keys = [`k:${code}`, `i:${ws.ip}`];
+    if (keys.some(blocked)) return fail(ws, 'Nhập sai quá nhiều lần. Hãy thử lại sau 5 phút.');
+    const key = normKey(d.key);
+    if (!cls || key.length < 6 || key.length > 32 || !sameText(hashCode(key, cls.keySalt), cls.keyHash)) {
+      failed(keys[0], 5); failed(keys[1], 20);
+      return fail(ws, 'Mã lớp hoặc mã giáo viên không đúng.');
+    }
+    fails.delete(keys[0]);
+    attach(cls, cls.teacher, ws);
+  },
+  resume(ws, d) { // nối lại phiên cũ sau khi mất kết nối hoặc tải lại trang
     if (ws.cls) return;
     const cls = classes.get(String(d.code || '').toUpperCase());
-    if (!cls || typeof d.token !== 'string' || d.token.length !== cls.token.length ||
-        !crypto.timingSafeEqual(Buffer.from(d.token), Buffer.from(cls.token))) return send(ws, { t: 'norejoin' });
-    const old = cls.teacher.ws;
-    cls.teacher.ws = ws;
-    ws.cls = cls; ws.me = cls.teacher;
-    if (old && old !== ws) { old.cls = null; old.close(); }
-    else broadcast(cls, { t: 'joined', m: pub(cls, cls.teacher) }, cls.teacher);
+    const p = cls && (findPerson(cls, d.id) || cls.pending.get(d.id));
+    if (!p || typeof d.token !== 'string' || !sameText(d.token, p.resume)) { failed(`i:${ws.ip}`, 40); return send(ws, { t: 'noresume' }); }
+    attach(cls, p, ws);
+  },
+  bye(ws) { // bấm "Rời lớp": rời hẳn, không giữ chỗ
+    const cls = ws.cls, me = ws.me;
+    if (!cls || me.ws !== ws) return;
+    ws.cls = null; me.ws = null;
+    if (me === cls.teacher) { me.offlineAt = Date.now(); me.goneSent = true; broadcast(cls, { t: 'left', id: me.id }); } else removeMember(cls, me);
     touchEmpty(cls);
-    welcome(cls, cls.teacher);
   },
   join(ws, d) {
     if (ws.cls) return;
@@ -342,16 +507,32 @@ const handlers = {
       if (r.err) return fail(ws, r.err);
       char = r.acc.char; name = r.acc.name; // dùng đúng cách viết tên đã gán
     } else if (accounts.has(name.toLowerCase())) return fail(ws, 'Tên này đã được dành riêng. Em nhập mã bảo mật hoặc chọn tên khác nhé.');
+    const nameKey = name.toLowerCase();
+    const dev = typeof d.dev === 'string' && /^[A-Za-z0-9]{16,64}$/.test(d.dev) ? d.dev : '';
+    const entry = !char && cls.roster.get(nameKey);
+    if (entry) { // đã được duyệt vào lớp này trước đây: quay lại bằng đúng điện thoại cũ thì vào thẳng
+      if (!dev || !sameText(hashCode(dev, entry.devSalt), entry.devHash)) {
+        failed(`i:${ws.ip}`, 40);
+        return fail(ws, 'Tên này đã có bạn dùng trong lớp này. Nếu là em, hãy dùng điện thoại đã vào lớp trước đó, hoặc nhờ cô giáo xoá tên cũ.');
+      }
+      const ex = [...cls.members.values()].find((m) => m.name.toLowerCase() === nameKey);
+      if (ex) return attach(cls, ex, ws); // phiên cũ còn giữ chỗ: nối lại
+      if (cls.members.size + cls.pending.size >= MAX_STUDENTS) return fail(ws, `Lớp đã đủ ${MAX_STUDENTS} học sinh.`);
+      const me = { id: rid(4), name: entry.name, role: 'student', ws, img: entry.img, imgKey: entry.imgKey, char: null, x: 0, z: 0, resume: rid(16),
+        ...(d.style ? lookOf(d) : { style: entry.style, seed: entry.seed }) };
+      ws.cls = cls; ws.me = me; touchEmpty(cls); admit(cls, me);
+      return;
+    }
     const img = char ? null : parseImg(d.img);
     if (!char && !img) return fail(ws, 'Ảnh nhân vật không hợp lệ hoặc quá lớn.');
     if (cls.members.size + cls.pending.size >= MAX_STUDENTS) return fail(ws, `Lớp đã đủ ${MAX_STUDENTS} học sinh.`);
     if (nameTaken(cls, name)) return fail(ws, char ? 'Tên này đang ở trong lớp rồi.' : 'Tên này đã có bạn dùng trong lớp, em chọn tên khác nhé.');
-    const me = { id: rid(4), name, role: 'student', ws, img, imgKey: rid(), char, x: 0, z: 0, ...lookOf(d) };
+    const me = { id: rid(4), name, role: 'student', ws, img, imgKey: rid(), char, x: 0, z: 0, resume: rid(16), dev, ...lookOf(d) };
     if (char) { ws.cls = cls; ws.me = me; touchEmpty(cls); admit(cls, me); return; }
     cls.pending.set(me.id, me);
     ws.cls = cls; ws.me = me;
     touchEmpty(cls);
-    send(ws, { t: 'pending', teacherHere: !!cls.teacher.ws });
+    send(ws, { t: 'pending', teacherHere: !!cls.teacher.ws, code: cls.code, id: me.id, resume: me.resume });
     send(cls.teacher.ws, { t: 'request', m: pub(cls, me) });
   },
   approve(ws, d) {
@@ -362,6 +543,7 @@ const handlers = {
     cls.pending.delete(m.id);
     send(ws, { t: 'resolved', id: m.id });
     admit(cls, m);
+    if (!m.char) rosterAdd(cls, m); // nhớ bạn này: lần sau vào lại không cần duyệt
   },
   reject(ws, d) {
     const cls = ws.cls;
@@ -380,9 +562,19 @@ const handlers = {
     if (!m) return;
     cls.members.delete(m.id);
     dropArts(cls, m.id);
-    send(m.ws, { t: 'kicked' });
-    m.ws.cls = null; m.ws.close();
+    rosterDel(cls, m.name.toLowerCase()); // mời ra là quên luôn: muốn vào lại phải được duyệt lại
+    if (m.ws) { send(m.ws, { t: 'kicked' }); m.ws.cls = null; m.ws.close(); }
     broadcast(cls, { t: 'left', id: m.id });
+  },
+  unroster(ws, d) { // xoá một bạn đang vắng khỏi danh sách lớp
+    if (!isTeacher(ws) || typeof d.key !== 'string') return;
+    const cls = ws.cls;
+    if ([...cls.members.values()].some((m) => m.name.toLowerCase() === d.key)) return;
+    rosterDel(cls, d.key);
+  },
+  deleteclass(ws, d) { // xoá lớp và mọi dữ liệu đã lưu
+    if (!isTeacher(ws) || d.confirm !== ws.cls.code) return;
+    destroyClass(ws.cls);
   },
   go(ws, d) {
     const cls = ws.cls, me = ws.me;
@@ -396,6 +588,8 @@ const handlers = {
     const cls = ws.cls, me = ws.me;
     if (!cls || cls.pending.has(me.id) || !STYLES.includes(d.style)) return;
     Object.assign(me, lookOf(d));
+    const re = !me.char && me.role === 'student' && cls.roster.get(me.name.toLowerCase());
+    if (re) { re.style = me.style; re.seed = me.seed; saveClass(cls); }
     broadcast(cls, { t: 'style', id: me.id, style: me.style, seed: me.seed }, me);
   },
   chat(ws, d) {
@@ -414,6 +608,7 @@ const handlers = {
     const m = { id: cls.nextMsg++, from: me.id, name: me.name, role: me.role, text, ts: now };
     cls.msgs.push(m);
     if (cls.msgs.length > CHAT_KEEP) cls.msgs.shift();
+    saveClass(cls);
     broadcast(cls, { t: 'chat', m });
   },
   delmsg(ws, d) {
@@ -421,6 +616,7 @@ const handlers = {
     const cls = ws.cls, i = cls.msgs.findIndex((m) => m.id === d.id);
     if (i < 0) return;
     cls.msgs.splice(i, 1);
+    saveClass(cls);
     broadcast(cls, { t: 'chatdel', id: d.id });
   },
   mute(ws, d) {
@@ -434,11 +630,13 @@ const handlers = {
   chatoff(ws, d) {
     if (!isTeacher(ws)) return;
     ws.cls.chatOff = !!d.on;
+    saveClass(ws.cls);
     broadcast(ws.cls, { t: 'chatoff', on: ws.cls.chatOff });
   },
   autoart(ws, d) {
     if (!isTeacher(ws)) return;
     ws.cls.autoArt = !!d.on;
+    saveClass(ws.cls);
     send(ws, { t: 'autoart', on: ws.cls.autoArt });
   },
   art(ws, d) { // gửi hình vẽ: chờ giáo viên duyệt (giáo viên gửi thì hiện luôn)
@@ -523,15 +721,9 @@ wss.on('connection', (ws, req) => {
   });
   ws.on('close', () => {
     const cls = ws.cls, me = ws.me;
-    if (!cls) return;
-    if (me === cls.teacher) {
-      if (cls.teacher.ws === ws) { cls.teacher.ws = null; broadcast(cls, { t: 'left', id: me.id }); }
-    } else if (cls.pending.delete(me.id)) {
-      send(cls.teacher.ws, { t: 'resolved', id: me.id });
-    } else if (cls.members.delete(me.id)) {
-      dropArts(cls, me.id);
-      broadcast(cls, { t: 'left', id: me.id });
-    }
+    if (!cls || me.ws !== ws) return; // đã rời hẳn, hoặc đã có kết nối mới thay thế
+    me.ws = null; me.offlineAt = Date.now(); // mất kết nối: vẫn giữ chỗ một lúc để nối lại
+    if (!cls.pending.has(me.id)) broadcast(cls, { t: 'away', id: me.id, on: true });
     touchEmpty(cls);
   });
 });
@@ -539,7 +731,22 @@ wss.on('connection', (ws, req) => {
 setInterval(() => { for (const ws of wss.clients) ws.count = 0; }, 1000);
 setInterval(() => {
   for (const ws of wss.clients) { if (!ws.alive) { ws.terminate(); continue; } ws.alive = false; ws.ping(); }
-  for (const [code, cls] of classes) if (cls.emptySince && Date.now() - cls.emptySince > EMPTY_TTL) classes.delete(code);
-}, 30000);
+  const now = Date.now();
+  for (const cls of classes.values()) { // người mất kết nối quá lâu thì rời lớp
+    for (const m of [...cls.members.values()]) if (!m.ws && now - m.offlineAt > GRACE_MS) removeMember(cls, m);
+    for (const m of [...cls.pending.values()]) if (!m.ws && now - m.offlineAt > PENDING_GRACE_MS) removeMember(cls, m);
+    const t = cls.teacher;
+    if (!t.ws && t.offlineAt && !t.goneSent && now - t.offlineAt > GRACE_MS) { t.goneSent = true; broadcast(cls, { t: 'left', id: t.id }); }
+  }
+}, 15000);
+setInterval(() => { // mỗi 10 phút: ghi nhận lớp đang hoạt động, xoá lớp quá hạn
+  const now = Date.now();
+  for (const cls of [...classes.values()]) {
+    if (cls.teacher.ws || cls.members.size || cls.pending.size) { cls.lastActive = now; saveClass(cls); }
+    else if (now - cls.lastActive > CLASS_TTL_MS) destroyClass(cls);
+  }
+}, 10 * 60 * 1000);
+process.on('SIGTERM', () => { for (const cls of classes.values()) saveClassNow(cls); process.exit(0); });
+loadClasses();
 
 server.listen(PORT, () => console.log(`Lớp Học Nét Vẽ đang chạy tại http://localhost:${PORT}`));

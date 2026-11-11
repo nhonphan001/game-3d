@@ -91,6 +91,8 @@ Xem ảnh ghép (hàng = kiểu hiển thị, cột = idle, walk, run, jump, tal
 git add lop-hoc/public/characters/<id> && git commit -m "Add character <id>" && git push origin main
 ```
 
+Khi **sửa** một gói đã có, nhớ tăng `"version"` trong `character.json` (để hình lớp được tải lại, không bị giữ bản cũ). Gói mới thì để `1`.
+
 Báo cho người dùng: mã nhân vật, gói có những kiểu hiển thị nào, chỗ nào còn khác tranh, và bước tiếp theo
 của họ: chờ tối đa 5 phút, mở `http://<VPS>:3000/admin.html`, gán nhân vật cho một tên (mã bảo mật tự sinh
 hoặc tự đặt), rồi đưa tên + mã cho người dùng cuối. Xem thử gói trên VPS: `/nhan-vat.html?id=<id>`.

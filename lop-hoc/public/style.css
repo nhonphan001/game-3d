@@ -123,3 +123,51 @@ footer {
 #lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(20, 28, 90, 0.65); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: zoom-out; }
 #lightbox img { max-width: 92vw; max-height: 80vh; background: #fff; border: 4px solid var(--ink); border-radius: 8px; }
 #lightbox p { color: #fff; margin: 0; font-size: 22px; }
+
+/* ===== Thanh công cụ, bảng nổi, điện thoại ===== */
+#room header { align-items: center; }
+#room header .tools { display: flex; gap: 6px; align-items: center; margin-left: auto; }
+#room header .tools button { display: inline-flex; align-items: center; gap: 2px; padding: 4px 12px; min-height: 40px; white-space: nowrap; }
+#room header .tools button i { font-style: normal; font-size: 20px; line-height: 1; }
+.chip { white-space: nowrap; }
+#chatBadge, #panelBadge { font-size: 15px; font-weight: 700; }
+#styleMenu {
+  position: fixed; top: calc(58px + env(safe-area-inset-top, 0px)); right: 10px; z-index: 25; display: flex; flex-wrap: wrap; gap: 6px;
+  max-width: min(320px, calc(100vw - 20px)); padding: 8px; background: var(--card); border: 2px solid var(--ink); border-radius: 14px;
+  box-shadow: 4px 5px 0 rgba(36, 52, 180, 0.2);
+}
+#styleMenu button { padding: 6px 12px; font-size: 17px; box-shadow: 0 2px 0 var(--ink); }
+.sheethead { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px 4px 14px; border-bottom: 2px solid var(--ink); font-size: 19px; flex: none; }
+.closex { padding: 0 10px; min-height: 34px; box-shadow: none; }
+.sheetbody { overflow-y: auto; overscroll-behavior: contain; padding: 0 12px 14px; flex: 1; min-height: 0; }
+#teacherPanel { display: flex; flex-direction: column; padding: 0; top: 64px; right: 10px; width: min(290px, 62vw); max-height: calc(100% - 270px); overflow: hidden; z-index: 20; }
+#chat { z-index: 20; }
+#chatLog { min-height: 0; }
+.net { position: fixed; top: calc(60px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 60; margin: 0; padding: 6px 16px; background: #c0392b; color: #fff; border-radius: 16px; max-width: 90vw; text-align: center; font-size: 17px; }
+#myClasses ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+#myClasses li { display: flex; gap: 6px; align-items: center; }
+#myClasses li span { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.1; }
+#myClasses li button { padding: 4px 12px; box-shadow: 0 2px 0 var(--ink); }
+#openBox summary { cursor: pointer; font-size: 16px; padding: 4px 0; }
+#openForm { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.bigkey { font-size: 34px; letter-spacing: 3px; text-align: center; margin: 4px 0; user-select: all; -webkit-user-select: all; background: #fff; border: 2.5px dashed var(--ink); border-radius: 12px; padding: 8px; }
+button.danger { color: #c0392b; border-color: #c0392b; box-shadow: 0 3px 0 #c0392b; margin-top: 8px; width: 100%; }
+button.mini { padding: 0 10px; box-shadow: none; font-size: 15px; }
+
+@media (max-width: 899px) {
+  #room header { left: 26px; padding: 8px 8px 8px 6px; padding-top: max(8px, env(safe-area-inset-top)); gap: 6px; flex-wrap: nowrap; }
+  .lbl { display: none; }
+  .chip { padding: 2px 8px; font-size: 16px; }
+  .chip b { font-size: 18px; }
+  #room header .tools { gap: 5px; }
+  #room header .tools button { min-width: 42px; min-height: 42px; padding: 2px 8px; }
+  #chat, #teacherPanel { left: 0; right: 0; width: auto; top: auto; bottom: var(--kb, 0px); border-radius: 18px 18px 0 0; border-width: 2.5px 0 0; z-index: 30; box-shadow: 0 -6px 16px rgba(36, 52, 180, 0.2); }
+  #chat { height: min(62vh, 440px); }
+  #teacherPanel { max-height: 72vh; }
+  #styleMenu { right: 6px; top: calc(56px + env(safe-area-inset-top, 0px)); }
+  .hint { display: none; }
+  footer { padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+  .toast { top: calc(64px + env(safe-area-inset-top, 0px)); }
+  .net { top: calc(62px + env(safe-area-inset-top, 0px)); }
+}
+#keyBox { z-index: 70; }

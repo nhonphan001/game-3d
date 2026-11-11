@@ -114,7 +114,7 @@ const UP = new THREE.Vector3(0, 1, 0), tmp = new THREE.Vector3(), fwd = new THRE
 // Nạp một gói nhân vật: character.json + model.js (nếu có)
 export async function loadCharacter(id, root = new URL('../characters/', import.meta.url).href) {
   const base = `${root}${id}/`;
-  const res = await fetch(`${base}character.json`);
+  const res = await fetch(`${base}character.json?t=${Math.floor(Date.now() / 60000)}`); // tránh bản cũ bị giữ trong bộ nhớ đệm
   if (!res.ok) throw new Error(`Không tìm thấy nhân vật ${id}`);
   const meta = await res.json();
   const mod = meta.model ? await import(`${base}${meta.model}`) : null;

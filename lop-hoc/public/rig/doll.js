@@ -9,7 +9,7 @@ export function createDoll(meta, baseUrl) {
   const D = meta.doll, K = D.metersPerPx, INK = D.ink || '#2434b4', PAPER = D.paper || '#fdfaf4';
   const toWorld = (x, y) => [(x - D.feet.x) * K, (D.feet.y - y) * K];
   const sheet = (L, order) => { // tấm giấy cho một lớp; gốc của nhóm là điểm xoay của lớp
-    const tex = loader.load(new URL(L.file, baseUrl).href);
+    const tex = loader.load(`${new URL(L.file, baseUrl).href}?v=${meta.version || 1}`); // đổi "version" trong character.json thì hình được tải lại
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(L.w * K, L.h * K),

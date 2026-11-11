@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Lớp Học Nét Vẽ</title>
   <link rel="stylesheet" href="style.css">
   <script type="importmap">
@@ -12,6 +12,14 @@
 <body>
   <canvas id="scene"></canvas>
   <div class="binding"></div>
+  <p id="net" class="net" hidden role="status">Mất kết nối, đang nối lại…</p>
+
+  <!-- Đang vào lại lớp sau khi tải lại trang -->
+  <main id="boot" class="sheet" hidden>
+    <h1>Đang vào lại lớp…</h1>
+    <p class="lead">Vui lòng chờ một chút.</p>
+    <button type="button" id="cancelBoot">Thôi, về trang đầu</button>
+  </main>
 
   <!-- Màn hình vào lớp -->
   <main id="home" class="sheet">
@@ -21,12 +29,19 @@
       <button type="button" id="tabStudent" class="active" role="tab">Học sinh</button>
       <button type="button" id="tabTeacher" role="tab">Giáo viên</button>
     </div>
+    <section id="myClasses" hidden>
+      <h2>Lớp của tôi</h2>
+      <ul id="myClassList"></ul>
+    </section>
     <form id="joinForm" autocomplete="off">
       <label id="codeRow">Mã lớp
         <input id="code" type="text" maxlength="6" placeholder="VD: K7M2QX" autocapitalize="characters" spellcheck="false">
       </label>
       <label><span id="nameLabel">Tên của em</span>
         <input id="name" type="text" maxlength="20" placeholder="Biệt danh, không cần họ tên thật">
+      </label>
+      <label id="titleRow" hidden>Tên lớp <span class="note">(tuỳ chọn, để nhận ra lớp khi mở lại)</span>
+        <input id="classTitle" type="text" maxlength="30" placeholder="VD: Lớp 3A">
       </label>
       <label>Mã bảo mật <span class="note">(chỉ dành cho bạn đã được gán nhân vật riêng)</span>
         <input id="pin" type="password" maxlength="32" placeholder="Để trống nếu em tải ảnh nhân vật" autocomplete="off">
@@ -50,11 +65,20 @@
           </div>
         </div>
       </div>
-      <p id="teacherNote" class="note" hidden>Ảnh là tuỳ chọn. Sau khi tạo lớp, cô/thầy đọc mã lớp cho học sinh và duyệt từng bạn.</p>
-      <p class="note">Ảnh gốc không rời khỏi máy: chỉ hình nhân vật đã tách nền được gửi đi, và bị xoá khi rời lớp.</p>
+      <p id="studentNote" class="note">Đã vào lớp này rồi? Chỉ cần nhập mã lớp và đúng tên cũ trên điện thoại cũ, không cần chọn lại ảnh.</p>
+      <p id="teacherNote" class="note" hidden>Ảnh là tuỳ chọn. Lớp được lưu lại: lần sau chọn "Mở lại" ở mục "Lớp của tôi" là vào đúng lớp cũ.</p>
+      <p class="note">Ảnh gốc không rời khỏi máy: chỉ hình nhân vật đã tách nền được gửi đi.</p>
       <p id="err" class="err" role="alert"></p>
       <button id="submit" type="submit" class="primary">Xin vào lớp</button>
     </form>
+    <details id="openBox" hidden>
+      <summary>Mở lớp cũ bằng mã giáo viên (máy khác)</summary>
+      <form id="openForm" autocomplete="off">
+        <label>Mã lớp <input id="openCode" type="text" maxlength="6" autocapitalize="characters" spellcheck="false"></label>
+        <label>Mã giáo viên <input id="openKey" type="text" maxlength="12" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX"></label>
+        <button type="submit">Mở lớp</button>
+      </form>
+    </details>
   </main>
 
   <!-- Chờ duyệt -->
@@ -65,40 +89,61 @@
     <button type="button" id="cancelWait">Thôi, quay lại</button>
   </main>
 
+  <!-- Mã giáo viên (hiện một lần sau khi tạo lớp) -->
+  <main id="keyBox" class="sheet" hidden role="dialog" aria-label="Mã giáo viên">
+    <h1>Lớp đã được lưu</h1>
+    <p class="lead">Mã lớp để đọc cho học sinh: <b id="keyCode"></b></p>
+    <p class="lead">Mã giáo viên, dùng để mở lại lớp từ máy khác:</p>
+    <p id="keyText" class="bigkey"></p>
+    <p class="note">Mã này chỉ hiện một lần. Trên máy này lớp đã được nhớ sẵn, bạn không cần nhập lại.</p>
+    <button type="button" id="keyOk" class="primary">Tôi đã ghi lại</button>
+  </main>
+
   <!-- Trong lớp -->
   <div id="room" hidden>
     <header>
-      <div class="left">
-        <div class="chip">Mã lớp <b id="roomCode"></b> · <span id="count"></span></div>
-        <button type="button" id="chatToggle" aria-expanded="false">💬 Trò chuyện<span id="chatBadge"></span></button>
-      </div>
-      <div class="styles mine" role="group" aria-label="Kiểu hiển thị nhân vật của mình">
-        <button type="button" data-style="flat">✏️ Nét vẽ</button>
-        <button type="button" data-style="sketch">🧊 3D</button>
-        <button type="button" data-style="color">🎨 3D tô màu</button>
-        <button type="button" class="shuffle" hidden>🎲</button>
-        <button type="button" id="leave">Rời lớp</button>
+      <div class="chip"><span class="lbl">Mã lớp </span><b id="roomCode"></b> · <span id="count"></span><span class="lbl"> học sinh</span></div>
+      <div class="tools">
+        <button type="button" id="chatToggle" aria-expanded="false" aria-label="Trò chuyện"><i>💬</i><span class="lbl"> Chat</span><span id="chatBadge"></span></button>
+        <button type="button" id="panelToggle" aria-expanded="false" aria-label="Quản lý lớp" hidden><i>👩‍🏫</i><span class="lbl"> Quản lý</span><span id="panelBadge"></span></button>
+        <button type="button" id="styleToggle" aria-expanded="false" aria-label="Kiểu hiển thị nhân vật"><i>🎨</i><span class="lbl"> Kiểu</span></button>
+        <button type="button" id="leave" aria-label="Rời lớp"><i>🚪</i><span class="lbl"> Rời lớp</span></button>
       </div>
     </header>
-    <aside id="teacherPanel" hidden>
-      <h2>Chờ duyệt <span id="pendingCount"></span></h2>
-      <ul id="pendingList"></ul>
-      <p id="noPending" class="note">Chưa có bạn nào xin vào. Hãy đọc mã lớp cho học sinh.</p>
-      <h2>Trong lớp</h2>
-      <ul id="memberList"></ul>
-      <h2>Hình vẽ chờ duyệt <span id="artPendingCount"></span></h2>
-      <ul id="artPendingList"></ul>
-      <p id="noArtPending" class="note">Chưa có hình nào chờ duyệt.</p>
-      <h2>Hình trong lớp</h2>
-      <div id="artGallery"></div>
-      <p id="noArts" class="note">Chưa có hình nào. Bấm vào một hình để chiếu lên bảng.</p>
-      <button type="button" id="boardClear" hidden>Gỡ hình khỏi bảng</button>
-      <h2>Cài đặt lớp</h2>
-      <label class="chk"><input type="checkbox" id="chatOffBox"> Tắt trò chuyện cả lớp</label>
-      <label class="chk"><input type="checkbox" id="autoArtBox"> Tự duyệt hình vẽ (không xem trước)</label>
+    <div id="styleMenu" hidden role="group" aria-label="Kiểu hiển thị nhân vật của mình">
+      <button type="button" data-style="flat">✏️ Nét vẽ</button>
+      <button type="button" data-style="sketch">🧊 3D</button>
+      <button type="button" data-style="color">🎨 3D tô màu</button>
+      <button type="button" class="shuffle" hidden>🎲 Đổi màu</button>
+    </div>
+    <aside id="teacherPanel" hidden aria-label="Quản lý lớp">
+      <div class="sheethead"><b>Quản lý lớp</b><button type="button" class="closex" data-close="teacher" aria-label="Đóng">✕</button></div>
+      <div class="sheetbody">
+        <h2>Chờ duyệt <span id="pendingCount"></span></h2>
+        <ul id="pendingList"></ul>
+        <p id="noPending" class="note">Chưa có bạn nào xin vào. Hãy đọc mã lớp cho học sinh.</p>
+        <h2>Trong lớp</h2>
+        <ul id="memberList"></ul>
+        <h2>Đã duyệt, đang vắng</h2>
+        <ul id="rosterList"></ul>
+        <p id="noRoster" class="note">Không có ai. Bạn nào đã được duyệt sẽ tự vào lại khi quay lại lớp.</p>
+        <h2>Hình vẽ chờ duyệt <span id="artPendingCount"></span></h2>
+        <ul id="artPendingList"></ul>
+        <p id="noArtPending" class="note">Chưa có hình nào chờ duyệt.</p>
+        <h2>Hình trong lớp</h2>
+        <div id="artGallery"></div>
+        <p id="noArts" class="note">Chưa có hình nào. Bấm vào một hình để chiếu lên bảng.</p>
+        <button type="button" id="boardClear" hidden>Gỡ hình khỏi bảng</button>
+        <h2>Cài đặt lớp</h2>
+        <label class="chk"><input type="checkbox" id="chatOffBox"> Tắt trò chuyện cả lớp</label>
+        <label class="chk"><input type="checkbox" id="autoArtBox"> Tự duyệt hình vẽ (không xem trước)</label>
+        <p class="note">Mã giáo viên: <b id="keyShown">•••••-•••••</b> <button type="button" id="keyReveal" class="mini">Hiện</button></p>
+        <button type="button" id="delClass" class="danger">Xoá lớp này</button>
+      </div>
     </aside>
     <p id="toast" class="toast" hidden></p>
     <section id="chat" hidden aria-label="Trò chuyện trong lớp">
+      <div class="sheethead"><b>Trò chuyện</b><button type="button" class="closex" data-close="chat" aria-label="Đóng">✕</button></div>
       <ul id="chatLog" aria-live="polite"></ul>
       <form id="chatForm" autocomplete="off">
         <input id="chatText" type="text" maxlength="120" placeholder="Nhập tin nhắn…" aria-label="Tin nhắn">

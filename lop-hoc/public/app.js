@@ -208,7 +208,7 @@ const boardCv = document.createElement('canvas');
 boardCv.width = 1024; boardCv.height = 560;
 const boardTex = new THREE.CanvasTexture(boardCv);
 boardTex.colorSpace = THREE.SRGBColorSpace;
-const boardState = { img: null, url: null, caption: '' };
+const boardState = { img: null, url: null, caption: '', title: '' };
 function drawBoard(code) {
   const g = boardCv.getContext('2d'), W = 1024, H = 560;
   g.fillStyle = CARD; g.fillRect(0, 0, W, H);
@@ -228,8 +228,9 @@ function drawBoard(code) {
     g.fillStyle = CARD; g.fillRect(120, 90, 784, 300);
     g.lineWidth = 4; g.strokeRect(120, 90, 784, 300);
     g.fillStyle = INK;
-    g.font = '700 92px "Dancing Script", cursive';
-    g.fillText('Lớp Học Nét Vẽ', 512, 230);
+    const title = boardState.title || 'Lớp Học Nét Vẽ';
+    g.font = `700 ${title.length > 16 ? 64 : 92}px "Dancing Script", cursive`;
+    g.fillText(title, 512, 230);
     g.font = '64px "Patrick Hand", sans-serif';
     g.fillText(code ? `Mã lớp: ${code}` : 'Chào mừng các bạn!', 512, 340);
   }
@@ -361,6 +362,10 @@ class Avatar {
     this.rebuild();
     scene.add(this.root, this.shadow);
     this.muted = !!m.muted;
+    this.away = !!m.away; // mất kết nối nhưng vẫn giữ chỗ: hiện 💤
+    this.awayIcon = new THREE.Sprite(new THREE.SpriteMaterial({ map: emojiTex('💤'), transparent: true, depthTest: false }));
+    this.awayIcon.renderOrder = 11; this.awayIcon.scale.setScalar(0.42); this.awayIcon.visible = this.away;
+    this.root.add(this.awayIcon);
     if (m.held) this.setHeld(m.held);
   }
   rebuild() { // dựng lại hình khi có ảnh hoặc khi đổi kiểu
@@ -462,6 +467,8 @@ class Avatar {
     }
     this.shadow.position.set(this.pos.x, 0.012, this.pos.z);
     this.shadow.scale.setScalar(Math.max(0.5, 1 - this.y * 0.35) * this.spawn);
+    this.awayIcon.visible = this.away;
+    if (this.away) this.awayIcon.position.set(0.35, this.h + 0.62 + s(t * 2) * 0.04, 0);
     if (this.held) { // tờ hình ở bên tay, lật theo hướng đi, đung đưa khi bước
       const xo = this.rig ? 0.62 : Math.min(0.9, (this.fig?.width || 0.8) * 0.5 + 0.18), yo = this.rig ? 0.95 : Math.max(0.5, this.h * 0.4);
       this.held.position.set((this.rig ? 1 : this.fx) * xo, yo + s(t * 2 + this.phase) * 0.01, this.rig ? 0.5 : 0.12);
@@ -486,13 +493,13 @@ class Avatar {
 const tmp = new THREE.Vector3();
 
 // ================================================================ Kết nối + trạng thái
-const session = { ws: null, me: null, role: null, code: '', max: 40, pending: new Map(), wantRoom: false,
-  arts: new Map(), pendingArts: new Map(), autoArt: false, hasArt: false };
+const session = { ws: null, me: null, role: null, code: '', title: '', max: 40, pending: new Map(), sid: null, reconnecting: false, shown: false, lastPong: 0, joinName: '',
+  arts: new Map(), pendingArts: new Map(), roster: new Map(), autoArt: false, hasArt: false };
 const chat = { open: false, unread: 0, off: false, muted: false };
 let role = 'student', cut = null, srcImg = null, look = { style: 'flat', seed: 0 };
 
 function show(screen) {
-  for (const id of ['home', 'wait', 'room']) $(id).hidden = id !== screen;
+  for (const id of ['home', 'wait', 'room', 'boot']) $(id).hidden = id !== screen;
 }
 function toast(msg) {
   const el = $('toast');
@@ -500,66 +507,171 @@ function toast(msg) {
   clearTimeout(toast.t);
   toast.t = setTimeout(() => { el.hidden = true; }, 3500);
 }
+// ---------------------------------------------------------------- Bộ nhớ trên máy (localStorage)
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* bộ nhớ bị chặn */ } },
+  del(k) { try { localStorage.removeItem(k); } catch { /* bỏ qua */ } },
+};
+function deviceKey() { // dấu nhận máy: để lần sau vào lại lớp không cần được duyệt
+  let k = store.get('lhnv-dev');
+  if (typeof k !== 'string' || k.length < 16) {
+    k = Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join('');
+    store.set('lhnv-dev', k);
+  }
+  return k;
+}
+const joinedId = (code, name) => `${code}|${name.toLowerCase()}`;
+const wasJoined = (code, name) => !!(store.get('lhnv-joined') || {})[joinedId(code, name)];
+function markJoined(code, name) { const j = store.get('lhnv-joined') || {}; j[joinedId(code, name)] = 1; store.set('lhnv-joined', j); }
+const myClasses = () => store.get('lhnv-classes') || [];
+const classKey = (code) => myClasses().find((c) => c.code === code)?.key || null;
+function rememberClass(c) {
+  const old = myClasses().find((x) => x.code === c.code) || {};
+  store.set('lhnv-classes', [{ ...old, ...c }, ...myClasses().filter((x) => x.code !== c.code)].slice(0, 20));
+  renderMyClasses();
+}
+function forgetClass(code) { store.set('lhnv-classes', myClasses().filter((c) => c.code !== code)); renderMyClasses(); }
+
+// ---------------------------------------------------------------- Kết nối, tự nối lại
+const net = { tries: 0, timer: null, since: 0 };
+const setNet = (on) => { $('net').hidden = !on; };
+function closeSocket() {
+  if (!session.ws) return;
+  session.ws.onclose = null; session.ws.onmessage = null;
+  try { session.ws.close(); } catch { /* đã đóng */ }
+  session.ws = null;
+}
 function resetRoom(msg) {
+  clearTimeout(net.timer); net.tries = 0; session.reconnecting = false; session.shown = false; setNet(false);
   for (const a of avatars.values()) a.dispose();
   avatars.clear();
-  session.pending.clear(); session.arts.clear(); session.pendingArts.clear(); session.hasArt = false;
-  $('chatLog').replaceChildren(); chat.off = chat.muted = false; chat.unread = 0; setChatOpen(false);
+  session.pending.clear(); session.arts.clear(); session.pendingArts.clear(); session.roster.clear(); session.hasArt = false;
+  $('chatLog').replaceChildren(); chat.off = chat.muted = false; chat.unread = 0;
+  for (const k of Object.keys(panels)) applyPanel(k, false);
+  $('keyBox').hidden = true;
+  boardState.title = '';
   setBoard(null);
-  session.me = null; session.code = ''; session.role = null;
-  try { sessionStorage.removeItem('lhnv-teacher'); } catch { /* không có bộ nhớ phiên */ }
+  session.me = null; session.code = ''; session.role = null; session.sid = null; session.title = '';
+  store.del('lhnv-session');
   drawBoard('');
   show('home');
+  renderMyClasses();
+  prefill();
   $('err').textContent = msg || '';
   $('submit').disabled = false;
 }
 function connect(first) {
-  if (session.ws) { session.ws.onclose = null; session.ws.close(); }
+  closeSocket();
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
-  session.ws = ws;
+  session.ws = ws; session.lastPong = Date.now();
   ws.onopen = () => ws.send(JSON.stringify(first));
   ws.onmessage = (ev) => { let d; try { d = JSON.parse(ev.data); } catch { return; } on[d.t]?.(d); };
-  ws.onclose = () => { if (session.ws === ws) resetRoom(session.closeMsg || 'Mất kết nối với lớp học.'); session.closeMsg = ''; };
-  ws.onerror = () => { $('err').textContent = 'Không kết nối được máy chủ lớp học.'; $('submit').disabled = false; };
+  ws.onclose = () => { if (session.ws !== ws) return; session.ws = null; onDisconnected(); };
+}
+function onDisconnected() {
+  if (session.sid) { startReconnect(); return; } // đang trong lớp hoặc chờ duyệt: tự nối lại
+  $('err').textContent = 'Không kết nối được máy chủ lớp học.'; $('submit').disabled = false; show('home'); // lần vào đầu tiên thất bại
+}
+function startReconnect() {
+  if (!session.sid) return;
+  if (!session.reconnecting) { session.reconnecting = true; net.since = Date.now(); net.tries = 0; }
+  if (Date.now() - net.since > 20 * 60 * 1000) { resetRoom('Mất kết nối với lớp học quá lâu. Em hãy vào lại nhé.'); return; }
+  setNet(true);
+  clearTimeout(net.timer);
+  net.timer = setTimeout(tryReconnect, Math.min(5000, 700 * 2 ** net.tries++));
+}
+function tryReconnect() {
+  if (!session.sid || !session.reconnecting || session.ws) return;
+  connect({ t: 'resume', code: session.sid.code, id: session.sid.id, token: session.sid.resume });
+}
+function forceReconnect() { // kết nối treo (điện thoại ngủ, đổi mạng): bỏ và nối lại ngay
+  if (!session.sid) return;
+  closeSocket(); clearTimeout(net.timer); net.tries = 0;
+  if (!session.reconnecting) { session.reconnecting = true; net.since = Date.now(); }
+  setNet(true); tryReconnect();
+}
+function checkAlive() { // gọi khi mở lại trình duyệt / có mạng trở lại
+  if (!session.sid) return;
+  if (!session.ws || session.ws.readyState !== 1) { if (session.reconnecting) { clearTimeout(net.timer); tryReconnect(); } else startReconnect(); return; }
+  const t0 = session.lastPong;
+  sendMsg({ t: 'ping' });
+  setTimeout(() => { if (session.lastPong === t0 && session.ws) forceReconnect(); }, 3000);
 }
 const sendMsg = (d) => { if (session.ws?.readyState === 1) session.ws.send(JSON.stringify(d)); };
 
 const on = {
-  error(d) { $('err').textContent = d.msg; $('submit').disabled = false; show('home'); session.ws.onclose = null; session.ws.close(); },
+  error(d) {
+    closeSocket();
+    if (session.sid) { resetRoom(d.msg); return; } // đang nối lại / vào lại mà bị từ chối
+    $('err').textContent = d.msg; $('submit').disabled = false; show('home');
+  },
   pending(d) {
+    session.sid = { code: d.code, id: d.id, resume: d.resume, role: 'student', name: session.joinName || session.sid?.name || '' };
+    store.set('lhnv-session', session.sid);
+    clearTimeout(net.timer); net.tries = 0; session.reconnecting = false; setNet(false);
     drawFit($('waitImg'), cut);
-    $('waitText').textContent = d.teacherHere ? 'Cô giáo sẽ xem hình của em rồi cho vào lớp.' : 'Cô giáo chưa có mặt. Em chờ một chút nhé.';
+    $('waitText').textContent = d.teacherHere ? 'Cô giáo sẽ xem hình của em rồi cho vào lớp.' : 'Cô giáo chưa có mặt. Em chờ một chút nhé, đừng đóng trình duyệt.';
     show('wait');
   },
-  rejected() { session.closeMsg = 'Cô giáo chưa duyệt hình này. Em thử vẽ lại hoặc chọn ảnh khác nhé.'; },
-  kicked() { session.closeMsg = 'Cô giáo đã mời em ra khỏi lớp.'; },
-  norejoin() { session.ws.onclose = null; session.ws.close(); resetRoom(''); },
+  rejected() { closeSocket(); resetRoom('Cô giáo chưa duyệt hình này. Em thử vẽ lại hoặc chọn ảnh khác nhé.'); },
+  kicked() { closeSocket(); resetRoom('Cô giáo đã mời em ra khỏi lớp.'); },
+  classgone() { if (session.role === 'teacher') forgetClass(session.code); closeSocket(); resetRoom('Lớp này đã bị xoá.'); },
+  noresume() { // phiên cũ không còn (máy chủ khởi động lại, hoặc quá thời gian giữ chỗ): thử vào lại bằng cách khác
+    closeSocket();
+    const sd = session.sid;
+    if (sd?.role === 'teacher' && classKey(sd.code)) { connect({ t: 'open', code: sd.code, key: classKey(sd.code) }); return; }
+    if (sd?.role === 'student' && sd.name && wasJoined(sd.code, sd.name)) { connect({ t: 'join', code: sd.code, name: sd.name, dev: deviceKey() }); return; }
+    resetRoom('Đã quá thời gian giữ chỗ trong lớp. Em hãy vào lại nhé.');
+  },
+  pong() { session.lastPong = Date.now(); },
   welcome(d) {
+    const resumed = session.reconnecting && session.shown; // nối lại trong cùng một lần mở trang: giữ nguyên bảng đang mở
+    clearTimeout(net.timer); net.tries = 0; session.reconnecting = false; setNet(false);
     for (const a of avatars.values()) a.dispose();
     avatars.clear();
-    Object.assign(session, { me: d.you, role: d.role, code: d.code, max: d.max });
+    Object.assign(session, { me: d.you, role: d.role, code: d.code, max: d.max, title: d.title || '' });
     session.pending = new Map((d.pending || []).map((m) => [m.id, m]));
-    if (d.token) try { sessionStorage.setItem('lhnv-teacher', JSON.stringify({ code: d.code, token: d.token })); } catch { /* bỏ qua */ }
     for (const m of d.members) avatars.set(m.id, new Avatar(m));
+    const mine = d.members.find((m) => m.id === d.you);
+    const myName = mine?.name || session.joinName || session.sid?.name || '';
+    session.sid = { code: d.code, id: d.you, resume: d.resume, role: d.role, name: myName };
+    store.set('lhnv-session', session.sid);
+    if (d.role === 'student') { markJoined(d.code, myName); store.set('lhnv-last', { code: d.code, name: myName }); }
+    if (d.role === 'teacher') {
+      const ok = session.openKey?.code === d.code ? session.openKey.key : null;
+      rememberClass({ code: d.code, title: d.title || '', name: myName, last: Date.now(), ...(d.key ? { key: d.key } : ok ? { key: ok } : {}) });
+      session.openKey = null;
+    }
     $('roomCode').textContent = d.code;
-    $('teacherPanel').hidden = d.role !== 'teacher';
+    $('panelToggle').hidden = d.role !== 'teacher';
+    boardState.title = d.title || '';
     show('room');
-    chat.off = !!d.chatOff; chat.muted = false; chat.unread = 0;
+    session.shown = true;
+    chat.off = !!d.chatOff; chat.muted = !!mine?.muted; chat.unread = 0;
     $('chatLog').replaceChildren();
     for (const m of d.chat || []) addChat(m, true);
     session.arts = new Map((d.arts || []).map((a) => [a.id, a]));
     session.pendingArts = new Map((d.pendingArts || []).map((a) => [a.id, a]));
+    session.roster = new Map((d.roster || []).map((r) => [r.key, r]));
     session.autoArt = !!d.autoArt;
     session.hasArt = !!avatars.get(d.you)?.heldUrl;
     setBoard(d.board || null);
-    setChatOpen(innerWidth >= 900);
+    look = { style: mine?.style || 'flat', seed: mine?.seed || 0 };
+    syncStyleButtons();
+    if (!resumed) {
+      setPanel('chat', innerWidth >= 900);
+      setPanel('teacher', d.role === 'teacher' && innerWidth >= 900);
+      const me = avatars.get(d.you);
+      if (me) { controls.target.set(me.pos.x, 0.9, me.pos.z); camera.position.set(me.pos.x, 4.2, me.pos.z + 9); }
+    }
     syncChat(); syncHold();
     refreshLists();
-    look = { style: avatars.get(d.you)?.style || 'flat', seed: avatars.get(d.you)?.seed || 0 };
-    syncStyleButtons();
-    const me = avatars.get(d.you);
-    if (me) { controls.target.set(me.pos.x, 0.9, me.pos.z); camera.position.set(me.pos.x, 4.2, me.pos.z + 9); }
+    if (d.key) showKeyBox(d.code, d.key);
   },
+  away(d) { const a = avatars.get(d.id); if (a) a.away = d.on; refreshLists(); },
+  rosteradd(d) { session.roster.set(d.r.key, d.r); refreshLists(); },
+  rosterdel(d) { session.roster.delete(d.key); refreshLists(); },
   joined(d) {
     avatars.get(d.m.id)?.dispose();
     avatars.set(d.m.id, new Avatar(d.m));
@@ -605,8 +717,10 @@ const on = {
 
 function refreshLists() {
   const students = [...avatars.values()].filter((a) => a.role === 'student');
-  $('count').textContent = `${students.length}/${session.max} học sinh`;
+  $('count').textContent = `${students.length}/${session.max}`;
   if (session.role !== 'teacher') return;
+  const need = session.pending.size + session.pendingArts.size;
+  $('panelBadge').textContent = need ? ` (${need})` : '';
   const row = (m, buttons) => {
     const li = document.createElement('li');
     if (m.img) { const im = document.createElement('img'); im.src = m.img; im.alt = `Hình của ${m.name}`; li.append(im); }
@@ -624,10 +738,17 @@ function refreshLists() {
   ])));
   $('pendingCount').textContent = session.pending.size ? `(${session.pending.size})` : '';
   $('noPending').hidden = session.pending.size > 0;
-  $('memberList').replaceChildren(...students.map((a) => row({ name: a.name }, [
+  $('memberList').replaceChildren(...students.map((a) => row({ name: a.away ? `${a.name} 💤` : a.name }, [
     [a.muted ? 'Bật tiếng' : 'Tắt tiếng', a.muted ? 'Cho nhắn tin lại' : 'Không cho nhắn tin', () => sendMsg({ t: 'mute', id: a.id, on: !a.muted })],
     ['Mời ra', 'Mời ra khỏi lớp', () => sendMsg({ t: 'kick', id: a.id })],
   ])));
+  const online = new Set(students.map((a) => a.name.toLowerCase()));
+  const off = [...session.roster.values()].filter((r) => !online.has(r.key));
+  $('rosterList').replaceChildren(...off.map((r) => row({ name: r.name, img: r.img }, [
+    ['Xoá', 'Xoá khỏi danh sách lớp', () => sendMsg({ t: 'unroster', key: r.key })],
+  ])));
+  $('noRoster').hidden = off.length > 0;
+  $('keyShown').textContent = ui.keyShown ? (classKey(session.code) || '(không có trên máy này)') : '•••••-•••••';
   const pend = [...session.pendingArts.values()];
   $('artPendingList').replaceChildren(...pend.map((a) => row({ name: a.name, img: a.url }, [
     ['✓', 'Duyệt hình', () => sendMsg({ t: 'artok', id: a.id })],
@@ -660,11 +781,43 @@ function setRole(r) {
   $('tabStudent').classList.toggle('active', r === 'student');
   $('tabTeacher').classList.toggle('active', r === 'teacher');
   $('codeRow').hidden = r === 'teacher';
+  $('titleRow').hidden = r !== 'teacher';
+  $('studentNote').hidden = r === 'teacher';
   $('teacherNote').hidden = r !== 'teacher';
+  $('openBox').hidden = r !== 'teacher';
   $('nameLabel').textContent = r === 'teacher' ? 'Tên giáo viên' : 'Tên của em';
-  $('submit').textContent = r === 'teacher' ? 'Tạo lớp' : 'Xin vào lớp';
+  $('submit').textContent = r === 'teacher' ? 'Tạo lớp mới' : 'Xin vào lớp';
   $('err').textContent = '';
+  renderMyClasses();
 }
+function prefill() { // điền sẵn mã lớp và tên của lần vào gần nhất (chỉ ô đang trống)
+  const last = store.get('lhnv-last');
+  if (role !== 'student' || !last?.code) return;
+  if (!$('code').value) $('code').value = last.code;
+  if (!$('name').value) $('name').value = last.name || '';
+}
+function renderMyClasses() { // các lớp đã tạo trên máy này, mở lại bằng một cái bấm
+  const list = myClasses();
+  $('myClasses').hidden = role !== 'teacher' || !list.length;
+  $('myClassList').replaceChildren(...list.map((c) => {
+    const li = document.createElement('li'), sp = document.createElement('span'), go = document.createElement('button'), x = document.createElement('button');
+    sp.textContent = `${c.title || 'Lớp chưa đặt tên'} · ${c.code}`;
+    go.type = 'button'; go.textContent = 'Mở lại'; go.disabled = !c.key; go.title = c.key ? '' : 'Không có mã giáo viên trên máy này';
+    go.onclick = () => openClass(c.code, c.key);
+    x.type = 'button'; x.textContent = '✕'; x.title = 'Quên lớp này trên máy này (không xoá lớp)'; x.setAttribute('aria-label', `Quên lớp ${c.code} trên máy này`);
+    x.onclick = () => forgetClass(c.code);
+    li.append(sp, go, x);
+    return li;
+  }));
+}
+function openClass(code, key) {
+  code = String(code || '').trim().toUpperCase();
+  if (code.length !== 6 || !String(key || '').trim()) { $('err').textContent = 'Hãy nhập mã lớp (6 ký tự) và mã giáo viên.'; return; }
+  $('err').textContent = '';
+  session.openKey = { code, key: String(key).trim() };
+  connect({ t: 'open', code, key: String(key).trim() });
+}
+$('openForm').onsubmit = (e) => { e.preventDefault(); openClass($('openCode').value, $('openKey').value); };
 $('tabStudent').onclick = () => setRole('student');
 $('tabTeacher').onclick = () => setRole('teacher');
 
@@ -692,15 +845,18 @@ $('joinForm').onsubmit = (e) => {
   const pin = $('pin').value.trim(); // có mã bảo mật = dùng nhân vật đã được gán sẵn, không cần ảnh
   if (role === 'student') {
     if (code.length !== 6) { $('err').textContent = 'Mã lớp gồm 6 ký tự.'; return; }
-    if (!cut && !pin) { $('err').textContent = 'Em hãy chọn ảnh nhân vật, hoặc nhập mã bảo mật nếu đã có nhân vật riêng.'; return; }
+    if (!cut && !pin && !wasJoined(code, name)) { $('err').textContent = 'Em hãy chọn ảnh nhân vật (hoặc nhập mã bảo mật nếu đã có nhân vật riêng). Đã vào lớp này rồi thì dùng đúng tên cũ.'; return; }
   }
   const img = cut && !pin ? toDataURL(cut) : null;
   if (cut && !pin && !img) { $('err').textContent = 'Ảnh quá lớn, em chọn ảnh khác nhé.'; return; }
   $('err').textContent = '';
   $('submit').disabled = true;
-  connect(role === 'teacher' ? { t: 'create', name, img, pin, ...look } : { t: 'join', code, name, img, pin, ...look });
+  session.joinName = name;
+  if (role === 'student') store.set('lhnv-last', { code, name });
+  const lk = img || pin ? look : {}; // quay lại không gửi ảnh thì giữ kiểu hiển thị đã lưu
+  connect(role === 'teacher' ? { t: 'create', name, title: $('classTitle').value.trim(), img, pin, ...look } : { t: 'join', code, name, img, pin, dev: deviceKey(), ...lk });
 };
-const leave = () => { if (session.ws) { session.ws.onclose = null; session.ws.close(); } resetRoom(''); };
+const leave = () => { sendMsg({ t: 'bye' }); closeSocket(); resetRoom(''); };
 $('cancelWait').onclick = leave;
 $('leave').onclick = leave;
 
@@ -732,12 +888,22 @@ function chooseStyle(style, reshuffle) {
   look = { style, seed: reshuffle ? (look.seed + 1 + Math.floor(Math.random() * 6)) % 100 : look.seed };
   syncStyleButtons();
   const me = avatars.get(session.me);
-  if (me) { me.setStyle(look.style, look.seed); sendMsg({ t: 'style', ...look }); } // đang trong lớp: đổi ngay và báo cho cả lớp
+  if (me) { me.setStyle(look.style, look.seed); sendMsg({ t: 'style', ...look }); if (!wide()) setPanel('style', false); } // đang trong lớp: đổi ngay và báo cho cả lớp
   else showPreview();
 }
 for (const b of document.querySelectorAll('[data-style]')) b.onclick = () => chooseStyle(b.dataset.style, false);
 for (const b of document.querySelectorAll('.shuffle')) b.onclick = () => chooseStyle('color', true);
 syncStyleButtons();
+
+// ---------------------------------------------------------------- Mã giáo viên, xoá lớp
+function showKeyBox(code, key) { $('keyCode').textContent = code; $('keyText').textContent = key; $('keyBox').hidden = false; }
+$('keyOk').onclick = () => { $('keyBox').hidden = true; };
+$('keyReveal').onclick = () => { ui.keyShown = !ui.keyShown; $('keyReveal').textContent = ui.keyShown ? 'Ẩn' : 'Hiện'; refreshLists(); };
+$('delClass').onclick = () => {
+  const b = $('delClass');
+  if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'Bấm lần nữa để xoá lớp và mọi dữ liệu'; setTimeout(() => { delete b.dataset.sure; b.textContent = 'Xoá lớp này'; }, 5000); return; }
+  sendMsg({ t: 'deleteclass', confirm: session.code });
+};
 
 // ---------------------------------------------------------------- Trò chuyện
 function syncChat() {
@@ -746,12 +912,27 @@ function syncChat() {
   $('chatText').placeholder = can ? 'Nhập tin nhắn…' : chat.muted ? 'Cô giáo đã tắt tiếng của em' : 'Cô giáo đang tắt trò chuyện';
   $('chatBadge').textContent = chat.unread ? ` (${chat.unread})` : '';
 }
-function setChatOpen(open) {
-  chat.open = open;
-  $('chat').hidden = !open;
-  $('chatToggle').setAttribute('aria-expanded', String(open));
-  if (open) { chat.unread = 0; syncChat(); $('chatLog').scrollTop = $('chatLog').scrollHeight; }
+// Các bảng nổi: trên máy tính nằm cạnh sân; trên điện thoại trượt từ dưới lên và chỉ mở một bảng một lúc.
+const panels = { chat: { el: 'chat', btn: 'chatToggle' }, teacher: { el: 'teacherPanel', btn: 'panelToggle' }, style: { el: 'styleMenu', btn: 'styleToggle' } };
+const ui = { keyShown: false };
+const wide = () => innerWidth >= 900;
+function applyPanel(name, open) {
+  const p = panels[name];
+  $(p.el).hidden = !open;
+  $(p.btn).setAttribute('aria-expanded', String(open));
+  if (name === 'chat') {
+    chat.open = open;
+    if (open) { chat.unread = 0; syncChat(); $('chatLog').scrollTop = $('chatLog').scrollHeight; }
+  }
 }
+function setPanel(name, open) {
+  if (name === 'teacher' && session.role !== 'teacher') open = false;
+  if (open) for (const k of Object.keys(panels)) if (k !== name && (!wide() || k === 'style')) applyPanel(k, false);
+  applyPanel(name, open);
+}
+const setChatOpen = (open) => setPanel('chat', open);
+for (const [name, p] of Object.entries(panels)) $(p.btn).onclick = () => setPanel(name, $(p.el).hidden);
+for (const b of document.querySelectorAll('[data-close]')) b.onclick = () => setPanel(b.dataset.close, false);
 function addChat(m, quiet) {
   const li = document.createElement('li'), b = document.createElement('b'), t = document.createElement('span');
   li.dataset.id = m.id;
@@ -771,7 +952,6 @@ function addChat(m, quiet) {
   log.scrollTop = log.scrollHeight;
   if (!quiet && !chat.open && m.from !== session.me) { chat.unread++; syncChat(); }
 }
-$('chatToggle').onclick = () => setChatOpen(!chat.open);
 $('chatForm').onsubmit = (e) => {
   e.preventDefault();
   const text = $('chatText').value.trim();
@@ -847,11 +1027,30 @@ canvas.addEventListener('pointerup', (e) => {
   sendMsg({ t: 'go', x: tmp.x, z: tmp.z });
 });
 
-// Giáo viên tải lại trang thì vào lại đúng lớp
-try {
-  const saved = JSON.parse(sessionStorage.getItem('lhnv-teacher') || 'null');
-  if (saved?.code && saved?.token) connect({ t: 'rejoin', code: saved.code, token: saved.token });
-} catch { /* không có bộ nhớ phiên */ }
+// Tải lại trang hoặc trình duyệt bị thu hồi bộ nhớ: tự vào lại đúng lớp đang tham gia
+$('cancelBoot').onclick = () => { closeSocket(); resetRoom(''); };
+const saved = store.get('lhnv-session');
+if (saved?.code && saved?.id && saved?.resume) {
+  session.sid = saved; session.reconnecting = true; net.since = Date.now();
+  show('boot');
+  connect({ t: 'resume', code: saved.code, id: saved.id, token: saved.resume });
+}
+setRole('student');
+prefill();
+
+// Giữ kết nối khi điện thoại ngủ / đổi mạng: nhịp tim 20 giây; mở lại trình duyệt thì kiểm tra ngay
+setInterval(() => {
+  if (session.ws?.readyState === 1 && session.sid) {
+    sendMsg({ t: 'ping' });
+    if (Date.now() - session.lastPong > 70000) forceReconnect();
+  }
+}, 20000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkAlive(); });
+addEventListener('online', checkAlive);
+if (window.visualViewport) { // bàn phím ảo che màn hình: đẩy các bảng lên trên bàn phím
+  const upd = () => document.documentElement.style.setProperty('--kb', `${Math.max(0, innerHeight - visualViewport.height - visualViewport.offsetTop)}px`);
+  visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd);
+}
 
 // ================================================================ Vòng lặp
 const clock = new THREE.Clock(), prev = new THREE.Vector3();
@@ -880,4 +1079,4 @@ renderer.setAnimationLoop(() => {
   controls.update();
   renderer.render(scene, camera);
 });
-window.lhnv = { session, avatars, boardState, chat }; // tiện kiểm thử
+window.lhnv = { session, avatars, boardState, chat, store, setPanel, forceReconnect }; // tiện kiểm thử

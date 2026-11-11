@@ -24,6 +24,16 @@ Ngoài cách tải ảnh, một người có thể vào lớp bằng **nhân v�
 
 Mã bảo mật chỉ lưu dạng băm trong `DATA_DIR/accounts.json`. Sai mã 5 lần thì tên đó bị khoá 5 phút. Mã quản trị lấy từ biến `ADMIN_TOKEN`; không đặt biến này thì trang quản trị bị tắt.
 
+## Lớp được lưu lại, tự nối lại, dùng trên điện thoại
+
+- **Lớp được lưu:** khi giáo viên tạo lớp, máy chủ lưu lớp xuống đĩa (`DATA_DIR/classes`) và đưa **mã giáo viên** (hiện một lần, dạng `XXXXX-XXXXX`). Trên máy đã tạo lớp, trang đầu có mục **"Lớp của tôi"**: bấm "Mở lại" là vào đúng lớp cũ, cùng mã lớp. Từ máy khác: mục "Mở lớp cũ bằng mã giáo viên". Tạo lớp có thể đặt **tên lớp** (hiện trên bảng).
+- **Lưu những gì:** tên lớp, mã giáo viên (dạng băm), hình giáo viên, **danh sách học sinh đã được duyệt** (tên + hình nhân vật + kiểu hiển thị + dấu nhận máy), 50 tin nhắn gần nhất, cài đặt chat/duyệt hình. **Không lưu:** hình vẽ gửi lên và hình trên bảng (mất khi người gửi rời lớp), ai đang ở trong lớp.
+- **Quay lại không cần duyệt:** học sinh đã được duyệt vào lại bằng đúng điện thoại cũ chỉ cần mã lớp + đúng tên, không cần chọn lại ảnh và không cần giáo viên duyệt lại. Máy khác dùng trùng tên bị từ chối. "Mời ra" là xoá luôn khỏi danh sách (muốn vào lại phải xin duyệt lại); bạn đang vắng có nút "Xoá" riêng.
+- **Hết hạn và xoá:** lớp không ai vào quá 30 ngày (đổi bằng biến `CLASS_TTL_DAYS`) bị xoá cùng dữ liệu. Giáo viên có nút "Xoá lớp này" trong bảng quản lý.
+- **Tự nối lại:** mất mạng, điện thoại khoá màn hình hoặc tải lại trang thì trình duyệt tự nối lại và vào đúng chỗ cũ. Người mất kết nối vẫn giữ chỗ **15 phút** (đổi bằng biến `GRACE_MIN`), nhân vật hiện 💤; quá hạn thì rời lớp. Bấm "Rời lớp" là rời ngay.
+- **Điện thoại:** thanh công cụ gọn ở trên (💬 chat, 👩‍🏫 quản lý, 🎨 kiểu, 🚪 rời lớp); chat và bảng quản lý của giáo viên trượt từ dưới lên, đẩy lên trên bàn phím khi gõ.
+- **Cloudflare:** máy chủ báo `Cloudflare-CDN-Cache-Control: no-store` cho trang và mã nguồn, và gắn mã phiên bản vào địa chỉ các tệp `.js`/`.css`, nên cập nhật có hiệu lực ngay, không cần xoá bộ nhớ đệm.
+
 ## Chạy máy chủ
 
 Cần Node.js 18 trở lên.
@@ -60,9 +70,9 @@ Máy chủ tự nhận địa chỉ thật của người dùng từ tiêu đề
 
 - Ảnh gốc không rời khỏi máy học sinh: chỉ hình nhân vật đã tách nền (PNG, tối đa 400 KB) được gửi lên.
 - Học sinh chỉ nhập mã lớp và biệt danh, không cần email hay số điện thoại.
-- Tin nhắn (50 tin gần nhất) và hình vẽ cũng chỉ nằm trong bộ nhớ máy chủ, mất cùng lớp. Hình vẽ dùng tối đa 300 MB bộ nhớ cho mọi lớp cộng lại.
-- Mọi thứ chỉ nằm trong bộ nhớ máy chủ: học sinh rời lớp thì hình bị xoá; lớp trống quá 10 phút thì bị xoá; khởi động lại máy chủ là mất hết.
-- Giáo viên tải lại trang vẫn vào lại đúng lớp (trong cùng thẻ trình duyệt).
+- Tin nhắn (50 tin gần nhất) được lưu cùng lớp, giáo viên đọc lại được khi mở lại lớp. Hình vẽ dùng tối đa 300 MB bộ nhớ cho mọi lớp cộng lại.
+- Dữ liệu lớp được lưu trên máy chủ (xem mục "Lớp được lưu lại"); hình vẽ gửi lên chỉ nằm trong bộ nhớ.
+- Hình nhân vật của học sinh đã duyệt nằm trên đĩa máy chủ cho tới khi giáo viên xoá bạn đó, xoá lớp, hoặc lớp hết hạn. Cần cân nhắc điều này theo Nghị định 13/2023.
 - Trước khi dùng với học sinh thật, cần đối chiếu Nghị định 13/2023 về dữ liệu cá nhân trẻ em.
 
 ## Chưa có
