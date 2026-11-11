@@ -7,7 +7,8 @@ Lớp học ảo nơi nhân vật vẽ tay của học sinh gặp nhau. Mỗi l�
 1. **Giáo viên** mở trang, chọn "Giáo viên", nhập tên (ảnh nhân vật là tuỳ chọn) và bấm "Tạo lớp". Mã lớp 6 ký tự hiện ở góc trên và trên bảng.
 2. **Học sinh** mở cùng trang, nhập mã lớp + tên (biệt danh), chọn ảnh chụp nhân vật vẽ trên giấy. Trình duyệt tự tách nền giấy; có thanh "Tách nền" để chỉnh.
 3. Giáo viên thấy hình và tên trong mục "Chờ duyệt", bấm ✓ để cho vào lớp hoặc ✗ để từ chối. Giáo viên cũng có thể "Mời ra" một học sinh đang trong lớp.
-4. Trong lớp: chạm vào sân để đi, bấm biểu cảm (chào, cười, nhảy, tim, sao, khóc, giận) hoặc một câu chọn sẵn. Không có chat tự do.
+4. Khi tải ảnh, mỗi người chọn kiểu hiển thị cho nhân vật: **Nét vẽ** (tấm cắt giấy phẳng), **3D** (hình được bơm phồng thành khối, giữ nét vẽ gốc, tô bóng bằng nét gạch) hoặc **3D tô màu** (khối 3D, các vùng kín trong nét vẽ được tự tô màu; nút 🎲 đổi bộ màu). Vào lớp rồi vẫn đổi được, cả lớp thấy ngay.
+5. Trong lớp: chạm vào sân để đi, bấm biểu cảm (chào, cười, nhảy, tim, sao, khóc, giận) hoặc một câu chọn sẵn. Không có chat tự do.
 
 ## Chạy máy chủ
 
@@ -43,10 +44,12 @@ Script cài Node.js và git, tải repo vào `/opt/game-3d`, tạo dịch vụ s
 
 - Nút báo cáo cho giáo viên, trang quản lý nhiều lớp, lưu trữ lâu dài.
 - Tách nền bằng mô hình phân đoạn; hiện chỉ dựa trên màu giấy nên ảnh cần nền giấy sáng, tương đối đều màu.
-- Nhân vật là một tấm cắt giấy (nghiêng, nhún, lật), chưa tách khớp đầu/thân/tay.
+- Khối 3D được suy ra tự động từ hình phẳng (dày ở giữa, mỏng ở mép), mặt sau là hình mặt trước lật lại; chưa tách khớp đầu/thân/tay.
+- Màu tự tô là phỏng đoán theo vùng kín, không hiểu đâu là tóc hay áo; vùng lớn ở phần trên được coi là da mặt.
 
 ## Cấu trúc
 
 - `server.js` – máy chủ HTTP + WebSocket, giữ trạng thái lớp, kiểm tra quyền giáo viên
+- `public/figure.js` – dựng hình theo ba kiểu: cắt giấy, bơm phồng thành khối 3D, tự tô màu
 - `public/app.js` – tách nền ảnh, cảnh 3D (three.js), giao diện vào lớp và bảng duyệt
 - `public/index.html`, `public/style.css` – giao diện kiểu giấy vở

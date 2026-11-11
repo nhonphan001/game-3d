@@ -1,6 +1,7 @@
 // Lớp Học Nét Vẽ — phía trình duyệt: vào lớp, tách nền ảnh, sân lớp 3D, bảng duyệt của giáo viên.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
+import { makeFigure, STYLES } from './figure.js';
 
 const $ = (id) => document.getElementById(id);
 const INK = '#2434b4', PAPER = '#f3eedb', CARD = '#fbf8ec';
@@ -13,6 +14,7 @@ const EMOJI = { wave: '👋', laugh: '😆', cry: '😭', angry: '💢', jump: '
 // để bỏ mặt bàn, bàn tay quanh trang. 3) "Đổ" từ mép vào: giấy thông với mép thành trong suốt; phần giấy
 // nằm kín trong nét vẽ được giữ lại nên nhân vật trông như hình cắt giấy. Vật lạ thò vào từ mép
 // (ngón tay, gáy lò xo) chỉ bị xoá trong một dải sát mép để không ăn vào nét vẽ.
+const WHITE = [253, 250, 244];
 function cutout(img, thr) {
   const scale = Math.min(1, 420 / Math.max(img.width, img.height));
   const W = Math.max(8, Math.round(img.width * scale)), H = Math.max(8, Math.round(img.height * scale));
@@ -107,7 +109,10 @@ function cutout(img, thr) {
     const p = y * w + x;
     if (state[p]) continue;
     const i = at(x, y) * 4;
-    o[p * 4] = src[i]; o[p * 4 + 1] = src[i + 1]; o[p * 4 + 2] = src[i + 2]; o[p * 4 + 3] = 255;
+    // cân lại màu để giấy thành trắng ngà dù ảnh chụp bị ám màu hay thiếu sáng
+    // và đậm nét mực lên một chút để nét bút nhạt vẫn rõ
+    for (let k = 0; k < 3; k++) o[p * 4 + k] = Math.max(0, 255 - (255 - Math.min(255, (src[i + k] * WHITE[k]) / Math.max(60, paper[k]))) * 1.35);
+    o[p * 4 + 3] = 255;
     kept++;
     if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
   }
@@ -272,7 +277,8 @@ const defaultTex = inkCanvas(256, 384, (g) => {
   g.moveTo(84, 180); g.lineTo(30, 240); g.moveTo(172, 180); g.lineTo(228, 130); g.lineTo(240, 60);
   g.moveTo(100, 340); g.lineTo(100, 378); g.moveTo(156, 340); g.lineTo(156, 378); g.stroke();
 });
-const loader = new THREE.TextureLoader();
+const figShared = { uLight: { value: new THREE.Vector3(0.4, 0.7, 0.6) }, uPx: { value: 1 } };
+const LIGHT = new THREE.Vector3(0.45, 0.8, 0.6).normalize();
 
 // ---------------------------------------------------------------- Nhân vật cắt giấy
 const avatars = new Map();
@@ -281,33 +287,38 @@ class Avatar {
     this.id = m.id; this.name = m.name; this.role = m.role;
     this.pos = new THREE.Vector3(m.x, 0, m.z);
     this.target = this.pos.clone();
-    this.phase = Math.random() * 6; this.speed = 0; this.face = 1; this.fx = 1;
+    this.phase = Math.random() * 6; this.speed = 0; this.face = 1; this.fx = 1; this.turn = 0;
+    this.style = STYLES.includes(m.style) ? m.style : 'flat'; this.seed = m.seed | 0;
     this.emote = null; this.emoteT = 0; this.y = 0; this.vy = 0; this.spawn = 0;
     this.root = new THREE.Group();
     this.flip = new THREE.Group();
     this.h = 1.5;
-    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: defaultTex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide }));
-    if (m.img) loader.load(m.img, (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
-      this.mesh.material.map = tex; this.mesh.material.needsUpdate = true;
-      this.setAspect(tex.image.width / tex.image.height);
-    });
-    this.flip.add(this.mesh);
+    this.src = defaultTex.image; // ảnh nguồn (đã tách nền) để dựng hình theo kiểu đang chọn
+    if (m.img) {
+      const im = new Image();
+      im.onload = () => { if (!this.gone) { this.src = im; this.rebuild(); } };
+      im.src = m.img;
+    }
     this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
     this.shadow.rotation.x = -Math.PI / 2;
     this.label = textSprite(m.name, { teacher: m.role === 'teacher' });
     this.icon = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false }));
     this.icon.renderOrder = 11; this.icon.visible = false;
     this.root.add(this.flip, this.label, this.icon);
-    this.setAspect(256 / 384);
+    this.rebuild();
     scene.add(this.root, this.shadow);
   }
-  setAspect(a) { // cao 1.5 m, hình quá rộng thì thu lại
-    const w = Math.min(2.1, this.h * a);
-    this.h = w / a;
-    this.mesh.scale.set(w, this.h, 1);
-    this.mesh.position.y = this.h / 2;
+  rebuild() { // dựng lại hình khi có ảnh hoặc khi đổi kiểu
+    if (this.fig) { this.flip.remove(this.fig.mesh); this.fig.dispose(); }
+    this.fig = makeFigure(this.src, this.style, this.seed, figShared);
+    this.flip.add(this.fig.mesh);
+    this.h = this.fig.height;
     this.label.position.y = this.h + 0.28;
+  }
+  setStyle(style, seed) {
+    if (!STYLES.includes(style)) return;
+    this.style = style; this.seed = seed | 0;
+    this.rebuild();
   }
   play(e) {
     this.emote = e; this.emoteT = 0;
@@ -354,7 +365,14 @@ class Avatar {
     this.root.rotation.y = Math.atan2(camera.position.x - this.pos.x, camera.position.z - this.pos.z);
     this.flip.rotation.z = rz;
     this.fx += (this.face - this.fx) * (1 - Math.exp(-dt * 14)); // lật mượt khi đổi hướng
-    this.flip.scale.set(this.fx * sx * this.spawn, sy * this.spawn, 1);
+    if (this.fig.flat) { // tấm giấy: lật trái/phải
+      this.flip.scale.set(this.fx * sx * this.spawn, sy * this.spawn, 1);
+      this.flip.rotation.y = 0;
+    } else {             // khối 3D: xoay người theo hướng đi, đứng yên thì đung đưa nhẹ để thấy khối
+      this.turn += (this.face * 0.75 * mv + s(t * 0.7 + this.phase) * 0.28 * (1 - mv) - this.turn) * (1 - Math.exp(-dt * 8));
+      this.flip.scale.set(sx * this.spawn, sy * this.spawn, sx * this.spawn);
+      this.flip.rotation.y = this.turn;
+    }
     this.shadow.position.set(this.pos.x, 0.012, this.pos.z);
     this.shadow.scale.setScalar(Math.max(0.5, 1 - this.y * 0.35) * this.spawn);
     if (this.bubble) {
@@ -364,8 +382,9 @@ class Avatar {
     }
   }
   dispose() {
+    this.gone = true;
     scene.remove(this.root, this.shadow);
-    if (this.mesh.material.map !== defaultTex) this.mesh.material.map.dispose();
+    this.fig.dispose();
     this.label.material.map.dispose();
   }
 }
@@ -373,7 +392,7 @@ const tmp = new THREE.Vector3();
 
 // ================================================================ Kết nối + trạng thái
 const session = { ws: null, me: null, role: null, code: '', max: 40, pending: new Map(), wantRoom: false };
-let role = 'student', cut = null, srcImg = null;
+let role = 'student', cut = null, srcImg = null, look = { style: 'flat', seed: 0 };
 
 function show(screen) {
   for (const id of ['home', 'wait', 'room']) $(id).hidden = id !== screen;
@@ -428,6 +447,8 @@ const on = {
     drawBoard(d.code);
     show('room');
     refreshLists();
+    look = { style: avatars.get(d.you)?.style || 'flat', seed: avatars.get(d.you)?.seed || 0 };
+    syncStyleButtons();
     const me = avatars.get(d.you);
     if (me) { controls.target.set(me.pos.x, 0.9, me.pos.z); camera.position.set(me.pos.x, 4.2, me.pos.z + 9); }
   },
@@ -447,6 +468,7 @@ const on = {
   go(d) { avatars.get(d.id)?.target.set(d.x, 0, d.z); },
   emote(d) { avatars.get(d.id)?.play(d.e); },
   say(d) { avatars.get(d.id)?.say(d.i); },
+  style(d) { avatars.get(d.id)?.setStyle(d.style, d.seed); },
   request(d) { session.pending.set(d.m.id, d.m); toast(`${d.m.name} xin vào lớp`); refreshLists(); },
   resolved(d) { session.pending.delete(d.id); refreshLists(); },
 };
@@ -494,7 +516,7 @@ $('tabTeacher').onclick = () => setRole('teacher');
 function recut() {
   if (!srcImg) return;
   cut = cutout(srcImg, Number($('thr').value));
-  drawFit($('preview'), cut);
+  showPreview();
   $('previewBox').hidden = false;
   $('err').textContent = cut ? '' : 'Chưa tách được nhân vật. Em kéo thanh "Tách nền" hoặc chụp trên nền giấy trơn nhé.';
 }
@@ -520,11 +542,46 @@ $('joinForm').onsubmit = (e) => {
   if (cut && !img) { $('err').textContent = 'Ảnh quá lớn, em chọn ảnh khác nhé.'; return; }
   $('err').textContent = '';
   $('submit').disabled = true;
-  connect(role === 'teacher' ? { t: 'create', name, img } : { t: 'join', code, name, img });
+  connect(role === 'teacher' ? { t: 'create', name, img, ...look } : { t: 'join', code, name, img, ...look });
 };
 const leave = () => { if (session.ws) { session.ws.onclose = null; session.ws.close(); } resetRoom(''); };
 $('cancelWait').onclick = leave;
 $('leave').onclick = leave;
+
+// ---------------------------------------------------------------- Chọn kiểu hiển thị: Nét vẽ / 3D / 3D tô màu
+// Khung xem thử có trình vẽ 3D riêng, nhân vật xoay qua lại để thấy khối.
+const pv = { renderer: null, scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(32, 1, 0.1, 20), fig: null, pivot: new THREE.Group(),
+  shared: { uLight: { value: new THREE.Vector3() }, uPx: { value: 1 } } };
+pv.scene.add(pv.pivot);
+pv.camera.position.set(0, 0.85, 4.1);
+pv.camera.lookAt(0, 0.8, 0);
+function showPreview() {
+  if (pv.fig) { pv.pivot.remove(pv.fig.mesh); pv.fig.dispose(); pv.fig = null; }
+  if (!cut) return;
+  if (!pv.renderer) {
+    pv.renderer = new THREE.WebGLRenderer({ canvas: $('preview'), antialias: true, alpha: true });
+    pv.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    pv.renderer.setSize(200, 200, false);
+    pv.shared.uPx.value = pv.renderer.getPixelRatio();
+  }
+  pv.fig = makeFigure(cut, look.style, look.seed, pv.shared, 1.6, 1.6);
+  pv.pivot.add(pv.fig.mesh);
+  pv.pivot.position.y = 0.8 - pv.fig.height / 2;
+}
+function syncStyleButtons() {
+  for (const b of document.querySelectorAll('[data-style]')) b.classList.toggle('active', b.dataset.style === look.style);
+  for (const b of document.querySelectorAll('.shuffle')) b.hidden = look.style !== 'color';
+}
+function chooseStyle(style, reshuffle) {
+  look = { style, seed: reshuffle ? (look.seed + 1 + Math.floor(Math.random() * 6)) % 100 : look.seed };
+  syncStyleButtons();
+  const me = avatars.get(session.me);
+  if (me) { me.setStyle(look.style, look.seed); sendMsg({ t: 'style', ...look }); } // đang trong lớp: đổi ngay và báo cho cả lớp
+  else showPreview();
+}
+for (const b of document.querySelectorAll('[data-style]')) b.onclick = () => chooseStyle(b.dataset.style, false);
+for (const b of document.querySelectorAll('.shuffle')) b.onclick = () => chooseStyle('color', true);
+syncStyleButtons();
 
 // Biểu cảm + câu chọn sẵn (không có chat tự do)
 for (const b of document.querySelectorAll('#emotes button')) b.onclick = () => { avatars.get(session.me)?.play(b.dataset.e); sendMsg({ t: 'emote', e: b.dataset.e }); };
@@ -564,6 +621,13 @@ renderer.setAnimationLoop(() => {
   if (canvas.width !== Math.floor(w * pr) || canvas.height !== Math.floor(h * pr)) {
     renderer.setSize(w, h, false);
     camera.aspect = w / h; camera.fov = w < h ? 56 : 42; camera.updateProjectionMatrix();
+  }
+  figShared.uPx.value = pr;
+  figShared.uLight.value.copy(LIGHT).transformDirection(camera.matrixWorldInverse);
+  if (pv.fig && !$('home').hidden) { // khung xem thử ở màn hình vào lớp
+    pv.pivot.rotation.y = Math.sin(t * 0.9) * (pv.fig.flat ? 0.3 : 0.8);
+    pv.shared.uLight.value.copy(LIGHT).transformDirection(pv.camera.matrixWorldInverse);
+    pv.renderer.render(pv.scene, pv.camera);
   }
   const me = avatars.get(session.me);
   if (me) prev.copy(me.pos);

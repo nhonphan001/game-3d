@@ -17,6 +17,7 @@ const EMPTY_TTL = 10 * 60 * 1000;    // lớp trống quá 10 phút thì xoá
 const MAX_PER_IP = 100;              // một trường có thể chung một địa chỉ mạng, nên để rộng hơn một lớp
 const MAX_SOCKETS = 3000;
 const EMOTES = ['wave', 'laugh', 'cry', 'angry', 'jump', 'heart', 'star'];
+const STYLES = ['flat', 'sketch', 'color']; // nét vẽ / 3D / 3D tô màu
 const PHRASES = 8;                   // số câu chọn sẵn (nội dung nằm ở trình duyệt)
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -48,7 +49,8 @@ const clampPos = (x, z) => {
   const d = Math.hypot(x, z);
   return d > ROOM_R ? { x: (x / d) * ROOM_R, z: (z / d) * ROOM_R } : { x, z };
 };
-const pub = (cls, m) => ({ id: m.id, name: m.name, role: m.role, img: m.img ? `/img/${cls.code}/${m.imgKey}.png` : null, x: m.x, z: m.z });
+const lookOf = (d) => ({ style: STYLES.includes(d.style) ? d.style : 'flat', seed: Number.isInteger(d.seed) ? ((d.seed % 100) + 100) % 100 : 0 });
+const pub = (cls, m) => ({ id: m.id, name: m.name, role: m.role, style: m.style, seed: m.seed, img: m.img ? `/img/${cls.code}/${m.imgKey}.png` : null, x: m.x, z: m.z });
 const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); };
 function broadcast(cls, msg, except) {
   for (const m of cls.members.values()) if (m !== except) send(m.ws, msg);
@@ -113,7 +115,7 @@ const handlers = {
     if (!name) return fail(ws, 'Hãy nhập tên giáo viên.');
     const img = d.img ? parseImg(d.img) : null;
     if (d.img && !img) return fail(ws, 'Ảnh không hợp lệ hoặc quá lớn.');
-    const teacher = { id: rid(4), name, role: 'teacher', ws, img, imgKey: rid(), x: 0, z: -3 };
+    const teacher = { id: rid(4), name, role: 'teacher', ws, img, imgKey: rid(), x: 0, z: -3, ...lookOf(d) };
     const cls = { code: newCode(), token: rid(16), teacher, members: new Map(), pending: new Map(), emptySince: 0 };
     classes.set(cls.code, cls);
     ws.cls = cls; ws.me = teacher;
@@ -142,7 +144,7 @@ const handlers = {
     if (!img) return fail(ws, 'Ảnh nhân vật không hợp lệ hoặc quá lớn.');
     if (cls.members.size + cls.pending.size >= MAX_STUDENTS) return fail(ws, `Lớp đã đủ ${MAX_STUDENTS} học sinh.`);
     if (nameTaken(cls, name)) return fail(ws, 'Tên này đã có bạn dùng trong lớp, em chọn tên khác nhé.');
-    const me = { id: rid(4), name, role: 'student', ws, img, imgKey: rid(), x: 0, z: 0 };
+    const me = { id: rid(4), name, role: 'student', ws, img, imgKey: rid(), x: 0, z: 0, ...lookOf(d) };
     cls.pending.set(me.id, me);
     ws.cls = cls; ws.me = me;
     touchEmpty(cls);
@@ -189,6 +191,12 @@ const handlers = {
     if (!p) return;
     me.x = p.x; me.z = p.z;
     broadcast(cls, { t: 'go', id: me.id, x: p.x, z: p.z }, me);
+  },
+  style(ws, d) { // đổi kiểu hiển thị nhân vật của chính mình
+    const cls = ws.cls, me = ws.me;
+    if (!cls || cls.pending.has(me.id) || !STYLES.includes(d.style)) return;
+    Object.assign(me, lookOf(d));
+    broadcast(cls, { t: 'style', id: me.id, style: me.style, seed: me.seed }, me);
   },
   emote(ws, d) {
     const cls = ws.cls;

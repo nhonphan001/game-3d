@@ -34,9 +34,17 @@
         </label>
         <div id="previewBox" hidden>
           <canvas id="preview" width="200" height="200"></canvas>
-          <label class="range">Tách nền
-            <input id="thr" type="range" min="15" max="110" value="45">
-          </label>
+          <div class="side">
+            <label class="range">Tách nền
+              <input id="thr" type="range" min="15" max="110" value="45">
+            </label>
+            <div class="styles" role="group" aria-label="Kiểu hiển thị nhân vật">
+              <button type="button" data-style="flat">✏️ Nét vẽ</button>
+              <button type="button" data-style="sketch">🧊 3D</button>
+              <button type="button" data-style="color">🎨 3D tô màu</button>
+              <button type="button" class="shuffle" hidden>🎲 Đổi màu</button>
+            </div>
+          </div>
         </div>
       </div>
       <p id="teacherNote" class="note" hidden>Ảnh là tuỳ chọn. Sau khi tạo lớp, cô/thầy đọc mã lớp cho học sinh và duyệt từng bạn.</p>
@@ -58,7 +66,13 @@
   <div id="room" hidden>
     <header>
       <div class="chip">Mã lớp <b id="roomCode"></b> · <span id="count"></span></div>
-      <button type="button" id="leave">Rời lớp</button>
+      <div class="styles mine" role="group" aria-label="Kiểu hiển thị nhân vật của mình">
+        <button type="button" data-style="flat">✏️ Nét vẽ</button>
+        <button type="button" data-style="sketch">🧊 3D</button>
+        <button type="button" data-style="color">🎨 3D tô màu</button>
+        <button type="button" class="shuffle" hidden>🎲</button>
+        <button type="button" id="leave">Rời lớp</button>
+      </div>
     </header>
     <aside id="teacherPanel" hidden>
       <h2>Chờ duyệt <span id="pendingCount"></span></h2>

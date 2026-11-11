@@ -45,8 +45,12 @@ input[type=text] {
 .filebtn { position: relative; align-items: center; cursor: pointer; padding: 10px; border: 2px dashed var(--ink); border-radius: 12px; text-align: center; }
 .filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 #previewBox { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.styles { display: flex; flex-wrap: wrap; gap: 6px; }
+.styles button { padding: 3px 9px; font-size: 16px; white-space: nowrap; box-shadow: 0 2px 0 var(--ink); }
+.styles.mine { justify-content: flex-end; }
 #preview, #waitImg {
-  width: 120px; height: 120px; flex: none; border: 2px solid var(--ink); border-radius: 10px;
+  width: 132px; height: 132px; flex: none; border: 2px solid var(--ink); border-radius: 10px;
   background: repeating-conic-gradient(#e2dcc4 0 25%, #f6f2e2 0 50%) 0 0 / 16px 16px;
 }
 #waitImg { align-self: center; width: 160px; height: 160px; }
@@ -64,7 +68,7 @@ input[type=range] { accent-color: var(--ink); width: 100%; }
 .chip { background: var(--card); border: 2px solid var(--ink); padding: 4px 12px; border-radius: 255px 18px 225px 18px / 18px 225px 18px 255px; }
 .chip b { letter-spacing: 2px; font-size: 21px; }
 #teacherPanel {
-  position: fixed; top: 62px; right: 10px; width: min(250px, 62vw); max-height: calc(100% - 250px); overflow-y: auto;
+  position: fixed; top: 104px; right: 10px; width: min(250px, 62vw); max-height: calc(100% - 250px); overflow-y: auto;
   background: var(--card); border: 2px solid var(--ink); border-radius: 14px; padding: 2px 12px 10px;
 }
 #teacherPanel ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
