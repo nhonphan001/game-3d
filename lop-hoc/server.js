@@ -17,7 +17,7 @@ const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';                        // đ�
 const MAX_STUDENTS = 40;
 const MAX_CLASSES = 200;
 const MAX_IMG = 400 * 1024;          // ảnh nhân vật đã tách nền, PNG
-const ROOM_R = 9;                    // bán kính sân lớp (mét)
+const ROOM = { hx: 12.5, z0: -9, z1: 9 }; // vùng đi lại: hình chữ nhật rộng 25 m × sâu 18 m (mét), trùng với trình duyệt
 const GRACE_MS = Number(process.env.GRACE_MIN || 15) * 60 * 1000;   // mất kết nối vẫn giữ chỗ trong lớp ngần này thời gian
 const PENDING_GRACE_MS = 5 * 60 * 1000;                              // học sinh đang chờ duyệt mà mất kết nối: giữ 5 phút
 const CLASS_TTL_MS = Number(process.env.CLASS_TTL_DAYS || 30) * 24 * 3600 * 1000; // lớp không ai vào quá ngần này ngày thì bị xoá
@@ -236,8 +236,7 @@ function parseImg(v) {
 const clampPos = (x, z) => {
   x = Number(x); z = Number(z);
   if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
-  const d = Math.hypot(x, z);
-  return d > ROOM_R ? { x: (x / d) * ROOM_R, z: (z / d) * ROOM_R } : { x, z };
+  return { x: Math.max(-ROOM.hx, Math.min(ROOM.hx, x)), z: Math.max(ROOM.z0, Math.min(ROOM.z1, z)) };
 };
 const lookOf = (d) => ({ style: STYLES.includes(d.style) ? d.style : 'flat', seed: Number.isInteger(d.seed) ? ((d.seed % 100) + 100) % 100 : 0 });
 const heldUrl = (cls, m) => { const a = m.held && cls.arts.get(m.held); return a ? `/art/${cls.code}/${a.key}` : null; };
@@ -403,8 +402,7 @@ const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 760 * 1024 })
 const fail = (ws, msg) => send(ws, { t: 'error', msg });
 
 function admit(cls, m) { // cho một học sinh vào lớp
-  const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * 4;
-  m.x = Math.sin(a) * r; m.z = Math.cos(a) * r;
+  m.x = (Math.random() * 2 - 1) * 8; m.z = -1 + Math.random() * 6; // xuất hiện rải rác ở giữa sân
   cls.members.set(m.id, m);
   broadcast(cls, { t: 'joined', m: pub(cls, m) }, m);
   welcome(cls, m);

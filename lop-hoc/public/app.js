@@ -6,7 +6,10 @@ import { Rig, loadCharacter } from './rig/rig.js';
 
 const $ = (id) => document.getElementById(id);
 const INK = '#2434b4', PAPER = '#f3eedb', CARD = '#fbf8ec';
-const ROOM_R = 9;
+const ROOM = { hx: 12.5, z0: -9, z1: 9 };         // vùng đi lại hình chữ nhật (mét), trùng với máy chủ
+const ROOM_DRAW = { hx: 13.1, z0: -9.6, z1: 9.6 }; // nét viền vẽ trên giấy, rộng hơn vùng đi lại một chút
+const WALL_Z = ROOM_DRAW.z0 - 0.3;                  // bảng và màn chiếu đứng sát mép sau của sân
+const clampRoom = (x, z) => ({ x: Math.max(-ROOM.hx, Math.min(ROOM.hx, x)), z: Math.max(ROOM.z0, Math.min(ROOM.z1, z)) });
 const PHRASES = ['Xin chào!', 'Cảm ơn bạn!', 'Bạn vẽ đẹp quá!', 'Chơi cùng mình nhé!', 'Mình đồng ý!', 'Giỏi lắm!', 'Cả lớp chú ý nào!', 'Tạm biệt!'];
 const EMOJI = { wave: '👋', laugh: '😆', cry: '😭', angry: '💢', jump: '✨', heart: '❤️', star: '⭐' };
 
@@ -152,7 +155,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(PAPER);
-scene.fog = new THREE.Fog(PAPER, 18, 46);
+scene.fog = new THREE.Fog(PAPER, 34, 90); // sân rộng: chỉ nhạt dần ở rất xa
 const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
 camera.position.set(0, 4.2, 9.5);
 const controls = new OrbitControls(camera, canvas);
@@ -181,13 +184,20 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshBas
     let seed = 11;
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     g.fillStyle = PAPER; g.fillRect(0, 0, 2048, 2048);
-    const R = (ROOM_R + 0.6) * 51.2;
-    g.lineWidth = 4;
-    g.beginPath();
-    for (let a = 0; a <= 6.3; a += 0.05) g.lineTo(1024 + Math.cos(a) * (R + rnd() * 5), 1024 + Math.sin(a) * (R + rnd() * 5));
-    g.stroke();
-    g.setLineDash([14, 16]); g.lineWidth = 2.5;
-    g.beginPath(); g.arc(1024, 1024, R + 18, 0, Math.PI * 2); g.stroke();
+    // khung chữ nhật vẽ tay: nét liền hơi run, nét đứt ở ngoài (1 m = 51,2 điểm ảnh, gốc ở giữa ảnh)
+    const X0 = 1024 - ROOM_DRAW.hx * 51.2, X1 = 1024 + ROOM_DRAW.hx * 51.2, Y0 = 1024 + ROOM_DRAW.z0 * 51.2, Y1 = 1024 + ROOM_DRAW.z1 * 51.2;
+    const rect = (pad, wob) => {
+      g.beginPath();
+      const pts = [[X0 - pad, Y0 - pad], [X1 + pad, Y0 - pad], [X1 + pad, Y1 + pad], [X0 - pad, Y1 + pad], [X0 - pad, Y0 - pad]];
+      g.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) {
+        const [ax, ay] = pts[i - 1], [bx, by] = pts[i], n = Math.ceil(Math.hypot(bx - ax, by - ay) / 24);
+        for (let k = 1; k <= n; k++) g.lineTo(ax + ((bx - ax) * k) / n + (rnd() - 0.5) * wob, ay + ((by - ay) * k) / n + (rnd() - 0.5) * wob);
+      }
+      g.stroke();
+    };
+    g.lineWidth = 4; rect(0, 4);
+    g.setLineDash([14, 16]); g.lineWidth = 2.5; rect(18, 0);
     g.setLineDash([]);
     for (let i = 0; i < 60; i++) {
       const x = rnd() * 2048, y = rnd() * 2048, r = 12 + rnd() * 16;
@@ -246,16 +256,16 @@ function setBoard(b) { // b: { url, name } hoặc null
 drawBoard('');
 document.fonts?.ready.then(() => { drawBoard(session.code || ''); drawScreen(!!vid.cur); });
 const board = new THREE.Mesh(new THREE.PlaneGeometry(7.3, 4), new THREE.MeshBasicMaterial({ map: boardTex }));
-board.position.set(0, 2.6, -ROOM_R - 1.6);
+board.position.set(0, 2.6, WALL_Z);
 scene.add(board);
 for (const x of [-3.45, 3.45]) {
   const leg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 0.1), new THREE.MeshBasicMaterial({ color: INK }));
-  leg.position.set(x, 0.45, -ROOM_R - 1.6);
+  leg.position.set(x, 0.45, WALL_Z);
   scene.add(leg);
 }
 
 // Màn chiếu phim đặt cạnh bảng: video YouTube phủ lên đúng mặt màn này (xem placeDock)
-const SCREEN = { x: -7.4, y: 2.5, z: -ROOM_R - 1.6, w: 5.6, h: 3.15 };
+const SCREEN = { x: -7.8, y: 2.5, z: WALL_Z, w: 5.6, h: 3.15 };
 const VR = { x: 20, y: 12, w: 984, h: 552 }; // vùng 16:9 trên mặt màn (toạ độ ảnh 1024×576) mà khung video phủ lên
 const screenCv = document.createElement('canvas');
 screenCv.width = 1024; screenCv.height = 576;
@@ -1248,7 +1258,7 @@ canvas.addEventListener('pointerup', (e) => {
   ray.setFromCamera(ndc, camera);
   if (boardState.img && ray.intersectObject(board).length) { openLightbox(boardState.url, boardState.caption); return; } // bấm vào bảng: xem hình to
   if (!ray.ray.intersectPlane(floor, tmp)) return;
-  if (tmp.length() > ROOM_R) tmp.setLength(ROOM_R);
+  Object.assign(tmp, { ...clampRoom(tmp.x, tmp.z), y: 0 }); // chỉ đi trong hình chữ nhật
   if (cam.mode === 'screen') followAvatar(); // bấm sàn để đi thì camera về bám theo nhân vật
   me.target.set(tmp.x, 0, tmp.z);
   sendMsg({ t: 'go', x: tmp.x, z: tmp.z });
@@ -1307,4 +1317,4 @@ renderer.setAnimationLoop(() => {
   placeDock();
   renderer.render(scene, camera);
 });
-window.lhnv = { session, avatars, boardState, chat, store, setPanel, forceReconnect, vid, yt, camera, cam, screenMesh }; // tiện kiểm thử
+window.lhnv = { session, avatars, boardState, chat, store, setPanel, forceReconnect, vid, yt, camera, controls, cam, screenMesh, clampRoom, ROOM }; // tiện kiểm thử
